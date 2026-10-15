@@ -15,6 +15,7 @@ COMMON     := $(ARCH) -O2 -g -fcommon -ffunction-sections -fdata-sections
 CPPFLAGS   := -DNO_GDB -DNO_SOUND -D__inline__=inline -DSTATFS_NO_ARGS=2 \
               -DSTATBUF_BAVAIL=f_bavail \
               -I$(ROOT)/src/port -I$(ROOT)/firmware/include \
+              -I$(ROOT)/firmware/common \
               -I$(TIEMU_SRC) -I$(TIEMU_SRC)/core -I$(UAE) \
               -I$(TIEMU_SRC)/core/ti_hw -I$(TIEMU_SRC)/core/ti_sw \
               -I$(TIEMU_SRC)/core/dbg -I$(TIEMU_SRC)/misc
@@ -48,7 +49,8 @@ CORE_SOURCES := \
     $(ROOT)/src/port/tiemu_port.c
 RT_SOURCES := $(ROOT)/firmware/rt/crt0.S $(ROOT)/firmware/rt/syscalls.c \
               $(ROOT)/firmware/common/uart.c
-APP_SOURCES := main.c flash.S
+T89_PAD_SOURCE := $(ROOT)/firmware/common/t89_pad.c
+APP_SOURCES := main.c flash.S $(T89_PAD_SOURCE)
 
 core_object = $(BUILD)/obj/core/$(notdir $(1)).o
 rt_object   = $(BUILD)/obj/rt/$(notdir $(1)).o
@@ -81,6 +83,7 @@ $(foreach source,$(CORE_SOURCES),$(eval $(call compile_c,$(call core_object,$(so
 $(foreach source,$(filter %.c,$(RT_SOURCES)),$(eval $(call compile_c,$(call rt_object,$(source)),$(source))))
 $(foreach source,$(filter %.S,$(RT_SOURCES)),$(eval $(call compile_s,$(call rt_object,$(source)),$(source))))
 $(eval $(call compile_c,$(call app_object,main.c),main.c))
+$(eval $(call compile_c,$(call app_object,$(T89_PAD_SOURCE)),$(T89_PAD_SOURCE)))
 
 $(BUILD)/flash.raw: FORCE
 	@test -n "$(OS_IMAGE)" || { echo "set OS_IMAGE=<private.raw>" >&2; exit 1; }

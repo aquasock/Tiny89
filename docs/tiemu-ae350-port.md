@@ -49,5 +49,25 @@ without a TiEmu stop condition, reached PC `0x00821e46`, produced final LCD
 hash `0c0df297`, printed `Tiny89 READY`, and exited zero. The user confirmed
 that the TI-89 Apps desktop appeared on HDMI.
 
+Later the same day the diagnostic became a continuous session: it runs one
+60 Hz frame of emulated time (the TI-89 Titanium's 12 MHz OSC1 divided by 60,
+200,000 M68K cycles) per iteration, presents the LCD at the platform's
+vertical blank into alternating frame buffers, and never exits, so the
+loader's `still running` result is its normal one. Its ELF contained 4,627,200
+bytes of text, 34,584 of initialized data and 455,636 of BSS, with SHA-256
+`8459e356074a92bde2a7da4837c146be9b4a4d3e494948f619a7dc2cb3068045`. Loaded to
+the AE350 it reported the same vectors (`SSP=0x00004c00`, `PC=0x00812188`), the
+pad unit answering as `544e5031`, and then 480 presented frames at about one
+per vertical blank, reaching the same `0x00821e46` and `0c0df297` desktop state
+as the host probe. Its keypad came from a Wii Classic Controller on PMOD0's
+first bus through the inherited fabric's registers at `0xe8040000`; the user
+pressed the controller and confirmed the mapping works. The mapping's host-test
+reports 205 checks passed.
+
+The inherited platform fixes the picture's shape: its video unit shows a
+256x240 frame buffer at 3, as many as 960 columns of 1280, so the calculator's
+160x100 LCD appears as a 160x100 patch at 1:1, 480x300 on screen. Filling the
+output needs a Tiny89-owned video path, which is the port boundary's next step.
+
 These sizes and rates describe this diagnostic build; they are not device or
 emulator limits.
