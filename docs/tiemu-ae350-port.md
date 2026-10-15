@@ -64,10 +64,40 @@ first bus through the inherited fabric's registers at `0xe8040000`; the user
 pressed the controller and confirmed the mapping works. The mapping's host-test
 reports 205 checks passed.
 
-The inherited platform fixes the picture's shape: its video unit shows a
+The inherited platform fixed the picture's shape: its video unit shows a
 256x240 frame buffer at 3, as many as 960 columns of 1280, so the calculator's
-160x100 LCD appears as a 160x100 patch at 1:1, 480x300 on screen. Filling the
-output needs a Tiny89-owned video path, which is the port boundary's next step.
+160x100 LCD appeared as a 160x100 patch at 1:1, 480x300 on screen. Tiny89 now
+has its own video unit instead: `fpga/tiny89_soc/` is forked from TinyNES at
+`f5011dd`, and its `video.sv` scans a 160x100 one-byte-per-pixel image, two
+buffers in the SDRAM's top 128 KiB at a 256-byte row stride, as a whole scale
+of 7 in both axes -- 1120x700 centred at (80,10) in 1280x720, square pixels,
+seven shades of nothing interpolated -- with the app's grayscale levels 0 to 3
+read straight out of the unit's four-entry palette. The app finds that unit by
+its ID register, `0x54383956` ("T89V"), and keeps a 1-bit path for the
+inherited one, so one ELF drives either platform.
+
+That image was built by `tools/build-tiny89-soc.sh` with the open flow: Yosys,
+nextpnr-himbaechel and Apicula, no Gowin EDA. It places and routes eight seeds
+over one synthesis result and packs the first whose pixel clock has no hold
+violations and whose routing passes every gate TinyNES measured for this chip
+-- the AE350's dedicated PLL hop, 75 MHz on the bus, 74.25 MHz on the pixel
+clock, every video block RAM written and read on one clock and in a 9-bit
+mode, and the pixel clock reaching the clock spines only through
+`SPINE26 <= CBRIDGEOUT_BOTTOM2`. Seed 1 did: 79.60 MHz on the bus and
+86.53 on the pixel clock. The packed image is 4,682,732 bytes, SHA-256
+`00ba0bf4e886cdfc7906d4fa6f542e730b043feebfd2e4ba5b495a0354c310c1`, and the
+user confirmed the result on HDMI: the calculator's screen fills most of the
+720p frame. The session reports `Tiny89 VIDEO T89V`, so the app took its own
+unit's path. It also reports `LCDMODE=1bit`: TiEmu's plane model has a single
+plane in use on the AMS desktop, so the picture is drawn with two of the four
+palette entries, and the four-level path is implemented but not yet
+demonstrated on hardware.
+
+`tests/tiny89_video_tb.sv` checks the unit on its own outputs -- 2,764,858
+comparisons of every screen pixel against the geometry and palette, the 7x7
+mapping, the bars, the buffer flip at a vertical blank, and the ID. One check,
+the FRAMES register's rate against the bench's own vertical-blank count, does
+not agree and is recorded as unresolved rather than passing.
 
 These sizes and rates describe this diagnostic build; they are not device or
 emulator limits.

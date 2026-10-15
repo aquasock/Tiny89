@@ -50,7 +50,9 @@ CORE_SOURCES := \
 RT_SOURCES := $(ROOT)/firmware/rt/crt0.S $(ROOT)/firmware/rt/syscalls.c \
               $(ROOT)/firmware/common/uart.c
 T89_PAD_SOURCE := $(ROOT)/firmware/common/t89_pad.c
-APP_SOURCES := main.c flash.S $(T89_PAD_SOURCE)
+T89_LCD_SOURCES := $(ROOT)/firmware/common/t89_lcd.c \
+                   $(ROOT)/firmware/common/t89_lcd_gray.c
+APP_SOURCES := main.c flash.S $(T89_PAD_SOURCE) $(T89_LCD_SOURCES)
 
 core_object = $(BUILD)/obj/core/$(notdir $(1)).o
 rt_object   = $(BUILD)/obj/rt/$(notdir $(1)).o
@@ -84,6 +86,7 @@ $(foreach source,$(filter %.c,$(RT_SOURCES)),$(eval $(call compile_c,$(call rt_o
 $(foreach source,$(filter %.S,$(RT_SOURCES)),$(eval $(call compile_s,$(call rt_object,$(source)),$(source))))
 $(eval $(call compile_c,$(call app_object,main.c),main.c))
 $(eval $(call compile_c,$(call app_object,$(T89_PAD_SOURCE)),$(T89_PAD_SOURCE)))
+$(foreach source,$(T89_LCD_SOURCES),$(eval $(call compile_c,$(call app_object,$(source)),$(source))))
 
 $(BUILD)/flash.raw: FORCE
 	@test -n "$(OS_IMAGE)" || { echo "set OS_IMAGE=<private.raw>" >&2; exit 1; }

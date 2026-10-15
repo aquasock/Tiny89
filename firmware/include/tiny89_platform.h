@@ -14,6 +14,9 @@
 #define T89_VIDEO_CTRL       T89_REG(0x10000)
 #define T89_VIDEO_STATUS     T89_REG(0x10004)
 #define T89_VIDEO_FRAMES     T89_REG(0x10008)
+#define T89_VIDEO_ID         T89_REG(0x1000c) /* read: which video unit answers */
+#define T89_VIDEO_ID_T89V    0x54383956u /* "T89V": the Tiny89 grayscale unit */
+#define T89_VIDEO_ID_TNV1    0x544e5631u /* "TNV1": the inherited TinyNES unit */
 #define T89_VIDEO_PALETTE(i) T89_REG(0x11000 + 4u * (i))
 #define T89_VIDEO_FB_BASE    0x41fe0000u
 #define T89_VIDEO_FB_BYTES   (128u << 10)

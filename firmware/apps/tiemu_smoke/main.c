@@ -1,8 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * Tiny89 on the inherited TinyNES ae350_soc fabric: run the emulated TI-89
- * Titanium continuously, presenting the calculator's LCD at the platform's
- * vertical blank and feeding its keypad from a Wii Classic Controller.
+ * Tiny89 on the ae350_soc fabric: run the emulated TI-89 Titanium
+ * continuously, presenting the calculator's LCD at the platform's vertical
+ * blank and feeding its keypad from a Wii Classic Controller.
+ *
+ * Two video units answer at the same registers.  The inherited TinyNES unit
+ * (id "TNV1") shows a 1-bit 256x240 frame buffer; the new Tiny89 grayscale
+ * unit (id "T89V") reads a 160x100 four-level image out of the top 128 KiB of
+ * SDRAM instead (firmware/common/t89_lcd.c).  The unit is probed once at
+ * start-up and the same ELF keeps working on either.
  */
 #include <inttypes.h>
 #include <stdint.h>
@@ -10,11 +16,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "gscales.h"
 #include "hw.h"
 #include "images.h"
 #include "kbd.h"
 #include "libuae.h"
 #include "m68k.h"
+#include "t89_lcd.h"
 #include "t89_pad.h"
 #include "tiny89_platform.h"
 #include "ti68k_def.h"
@@ -77,6 +85,25 @@ static void render_lcd(uint8_t *frame)
 }
 
 /*
+ * Put the calculator's picture into the buffer the fabric is not showing.
+ *
+ * The T89V unit reads its own 160x100 four-level plane image at SDRAM
+ * 0x41fe0000 + 0x10000*b and shades it from PALETTE(0..3); the inherited
+ * TinyNES unit keeps the 1-bit 256x240 frame buffer it has always had.  Both
+ * write through the D-cache, so the caller writes it back before presenting.
+ */
+static void render_frame(int gray, unsigned buffer)
+{
+    uint8_t *frame = T89_VIDEO_FB(buffer);
+
+    if (gray) {
+        t89_lcd_render(frame);
+    } else {
+        render_lcd(frame);
+    }
+}
+
+/*
  * Sample controller 0 and hand the difference to TiEmu's keypad.
  *
  * This runs every frame rather than only when the fabric's reads-completed
@@ -133,11 +160,11 @@ int main(void)
     t89_keymap_t map;
     t89_key_event_t events[MAX_KEY_EVENTS];
     t89_pad_t pad;
-    const char *layer;
-    uint32_t pad_id, frames, last_frames, last_lcd = 0;
+    const char *layer, *video;
+    uint32_t pad_id, video_id, frames, last_frames, last_lcd = 0;
     uint32_t presented = 0, stable = 0;
     unsigned buffer = 0;
-    int have_pad, ready_printed = 0;
+    int have_pad, gray, ready_printed = 0;
 
     printf("Tiny89 AE350 TiEmu smoke start\n");
     if ((size_t)(tiny89_flash_image_end - tiny89_flash_image) != FLASH_BYTES) {
@@ -177,11 +204,55 @@ int main(void)
     printf("Tiny89 BOOT SSP=%08" PRIx32 " PC=%08" PRIx32 "\n",
         tihw.initial_ssp, tihw.initial_pc);
 
+    /*
+     * Seed TiEmu's gray-plane model exactly as the TiEmu GTK frontend did
+     * after a reset, gui/calc/calc.c:587-590 (the same three lines reappear in
+     * gscales.c:418-420 for a "refresh from GTK"): plane 0 is the LCD at
+     * tihw.lcd_adr, its buffer is the calculator's RAM at that address, and one
+     * plane is in use.  Without it lcd_planebufs[0] stays NULL until
+     * gscales.c's process_address() has seen UPDATE_PLANES (16) plane scans,
+     * which the T89V render path would read as an all-paper plane.  The model
+     * itself is driven from the run loop by core/ti_hw/m68k.c:263,
+     * lcd_hook_hw2(0), for HW2/HW3.
+     */
+    lcd_planes[0] = tihw.lcd_adr;
+    lcd_planebufs[0] = &tihw.ram[tihw.lcd_adr];
+    ngc = 1;
+    lcd_changed = 1;
+
+    /*
+     * Which video unit answers: the new Tiny89 grayscale unit reads the
+     * 160x100 four-level image from the top of SDRAM, the inherited TinyNES
+     * unit the 1-bit 256x240 frame buffer.  Probed once; the render path
+     * follows it.
+     */
+    video_id = T89_VIDEO_ID;
+    gray = (video_id == T89_VIDEO_ID_T89V);
+    video = gray ? "T89V" : "TNV1";
+    if (gray) {
+        printf("Tiny89 VIDEO T89V\n");
+    } else {
+        printf("Tiny89 VIDEO TNV1 ID=%08" PRIx32 "\n", video_id);
+    }
+
     /* Start showing the calculator's LCD: palette first, then the content of
      * buffer 0, written back before the fabric is told to show it. */
-    T89_VIDEO_PALETTE(0) = 0x9fb58fu;
-    T89_VIDEO_PALETTE(1) = 0x182018u;
-    render_lcd(T89_VIDEO_FB(buffer));
+    if (gray) {
+        /* The T89V unit's four grays, paper to ink: a project choice, made by
+         * interpolating the palette Tiny89 used for its 1-bit display (paper
+         * 0x9fb58f, ink 0x182018), so level 0
+         * and level 3 are still that paper and ink and levels 1 and 2 sit
+         * evenly between them (45/50/40 per channel step, the same linear
+         * spacing TiEmu's compute_grayscale() used). */
+        T89_VIDEO_PALETTE(0) = 0x9fb58fu;
+        T89_VIDEO_PALETTE(1) = 0x728367u;
+        T89_VIDEO_PALETTE(2) = 0x455240u;
+        T89_VIDEO_PALETTE(3) = 0x182018u;
+    } else {
+        T89_VIDEO_PALETTE(0) = 0x9fb58fu;
+        T89_VIDEO_PALETTE(1) = 0x182018u;
+    }
+    render_frame(gray, buffer);
     t89_dcache_wbinval();
     T89_VIDEO_CTRL = T89_VIDEO_ENABLE;
 
@@ -231,7 +302,7 @@ int main(void)
         if (frames != last_frames) {
             last_frames = frames;
             buffer ^= 1u;
-            render_lcd(T89_VIDEO_FB(buffer));
+            render_frame(gray, buffer);
             t89_dcache_wbinval();
             T89_VIDEO_CTRL = T89_VIDEO_ENABLE |
                 (buffer ? T89_VIDEO_BUFFER : 0u);
@@ -259,11 +330,13 @@ int main(void)
                 layer = t89_layer_name(map.layer);
                 printf("Tiny89 FRAME n=%u PC=%08" PRIx32 " CYC=%u"
                        " LCD=%08" PRIx32 " VBL=%u PAD=%04x KEYS=%d"
-                       " LAYER=%s\n",
+                       " LAYER=%s VID=%s",
                     (unsigned)presented, (uint32_t)m68k_getpc(),
                     (unsigned)hw_m68k_get_cycle_count(0), hash,
                     (unsigned)frames, (unsigned)(pad.buttons & 0xffffu),
-                    map.applied_count, layer ? layer : "?");
+                    map.applied_count, layer ? layer : "?", video);
+                if (gray) printf(" LCDMODE=%s", t89_lcd_mode());
+                printf("\n");
             }
         }
     }

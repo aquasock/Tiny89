@@ -127,3 +127,72 @@ Hold input work at this state, and build a Tiny89-owned AE350 platform image who
 - User Test: PASS
 
 ---
+
+## 4 COMMIT Unreleased 2026-10-15T08:42:35-07:00
+
+#### Coming From:
+
+Unreleased 8408f67
+
+#### Purpose:
+
+Give Tiny89 its own AE350 platform instead of the inherited TinyNES image, showing the calculator's 160x100 LCD at a whole scale of 7 filling most of the 720p output, with the app's four-level grayscale path selected by the platform's own ID.
+
+#### Outcome:
+
+`fpga/tiny89_soc/` and `firmware/boot/` are forked byte-faithfully from TinyNES at `f5011dd`, with their MIT headers kept and the provenance recorded in THIRD_PARTY.md and `docs/tiny89-soc.md`; the only differences are a fork notice, Tiny89 banner strings, the desk layer's font path (which pointed at `fpga/ae350_soc/` and would not have read in this repository) and a `firmware/boot/Makefile` repointed at five support files forked into `firmware/boot/support/`. Tiny89's own `fpga/tiny89_soc/video.sv` replaces the NES picture with the calculator's 160x100 one-byte-per-pixel image, two buffers in the SDRAM's top 128 KiB at a 256-byte row stride, shown at a whole scale of 7 in both axes as 1120x700 centred at (80,10) in 1280x720 with square pixels and black bars of 80 columns and 10 rows, its palette index the pixel's own value 0 to 3 from a four-entry palette, with the ASPECT register now a documented no-op, the desk layer's overlay kept, and ID 0x54383956 ("T89V") replacing 0x544e5631. In firmware, `firmware/common/t89_lcd.c` and `t89_lcd_gray.c` port TiEmu's plane-exposure composition -- the model its dropped GTK frontend applied in `gui/calc/screen.c`, over the plane state `core/ti_hw/gscales.c` maintains and `core/ti_hw/m68k.c` drives -- into a 160x100 four-level image, leaving `gui/calc/calc.c`'s seeding of `lcd_planes[0]` and `ngc` as the app's job; `firmware/apps/tiemu_smoke/main.c` reads the video unit's ID and takes the grayscale path only for "T89V", keeping the 1-bit 256x240 path so one ELF drives either platform, and tools/build-tiny89-soc.sh builds the platform with the open flow, synthesising once and then placing and routing eight seeds and packing the first whose pixel clock has no hold violations and whose routing passes every gate TinyNES measured: the AE350's dedicated PLL hop, 75 MHz on the bus, 74.25 MHz on the pixel clock, every video block RAM written and read on one clock and in a 9-bit mode, and the pixel clock reaching the clock spines only through SPINE26 <= CBRIDGEOUT_BOTTOM2. That sweep is not optional: the forked fabric itself failed the pixel-clock hold check on five of the same eight seeds, and no seed of the new unit passed at TinyNES's own seed 11. The app builds to 4,627,952 bytes of text with the mapping's 205 checks and the new LCD module's 46 checks passing, and the platform packed at seed 1, bus 79.60 MHz and pixel 86.53 MHz, to a 4,682,732-byte image with SHA-256 00ba0bf4e886cdfc7906d4fa6f542e730b043feebfd2e4ba5b495a0354c310c1. That image was put on the card as `/root/cores/console138k/tiny89.bin` -- the inherited `tiny89-ae350.bin` left in place as a fallback -- loaded with tangload, and the program loaded through it at 186.6 KB/s; the session printed the forked boot ROM's Tiny89 banners, the same boot vectors as before (SSP 0x00004c00, PC 0x00812188), `Tiny89 VIDEO T89V`, `Tiny89 PAD OK ID=544e5031` and `Tiny89 READY`, then 238 heartbeats in which the controller's keys and layers changed as the user pressed it, reaching the same 0x00821e46 and 0c0df297 desktop state as every earlier run. The user confirmed that the picture on HDMI looks perfect. Two things are recorded as unresolved rather than passing: every heartbeat also says `LCDMODE=1bit`, so TiEmu's plane model has one plane in use and the picture is drawn with two of the four palette entries, leaving the four-level path implemented but not demonstrated on hardware; and `tests/tiny89_video_tb.sv`, whose 2,764,858 comparisons of every screen pixel against the geometry, palette, 7x7 mapping, bars, buffer flip and ID all pass, disagrees with the unit on the FRAMES register's rate against the bench's own count of vertical blanks. Three of the harness faults found on the way were the testbench's own -- halfwords offered at even indices the unit indexes consecutively, a bus master that ignored HREADY so palette writes were dropped, and read data sampled a cycle early -- and one claim was withdrawn: the unit's nx reaching 224 is the blanking period, not a defect. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged, validated this sequential entry's six sections, prose, Status values and the log's four-entry count, and confirmed that no settled entry was rewritten.
+
+#### Next Steps:
+
+Decide the next cycle; the four-level grayscale needs TiEmu's plane model to be engaged on hardware or the limitation to be accepted as two shades, the testbench's FRAMES disagreement needs resolving against the unit's own vblank count, and TiEmu's ngc 7 and 8 modes still quantise onto a four-entry palette where an eight-entry one would fit them. Persistent calculator state remains deferred by the user's instruction.
+
+#### Files Modified:
+
+- README.md
+- THIRD_PARTY.md
+- docs/tiemu-ae350-port.md
+- docs/tiny89-soc.md
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/main.c
+- firmware/boot/Makefile
+- firmware/boot/crt0.S
+- firmware/boot/link.ld
+- firmware/boot/load.c
+- firmware/boot/load.h
+- firmware/boot/main.c
+- firmware/boot/support/memtest.c
+- firmware/boot/support/memtest.h
+- firmware/boot/support/tinynes.h
+- firmware/boot/support/uart.c
+- firmware/boot/support/uart.h
+- firmware/common/t89_lcd.c
+- firmware/common/t89_lcd.h
+- firmware/common/t89_lcd_gray.c
+- firmware/common/t89_lcd_gray.h
+- firmware/include/tiny89_platform.h
+- fpga/tiny89_soc/ae350_soc.cst
+- fpga/tiny89_soc/ae350_soc.sdc
+- fpga/tiny89_soc/ae350_soc.sv
+- fpga/tiny89_soc/ahb_boot_rom.sv
+- fpga/tiny89_soc/ahb_ram.sv
+- fpga/tiny89_soc/ahb_sdram.sv
+- fpga/tiny89_soc/desk_font.hex
+- fpga/tiny89_soc/desk_link.sv
+- fpga/tiny89_soc/exts_uart.sv
+- fpga/tiny89_soc/i2s_out.sv
+- fpga/tiny89_soc/video.sv
+- fpga/tiny89_soc/wii_pads.sv
+- tests/run_t89_lcd_test.sh
+- tests/test_t89_lcd.c
+- tests/tiny89_video_tb.sv
+- tools/build-tiny89-soc.sh
+- tools/fs_to_bin.py
+- tools/sweep-tiny89-soc.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

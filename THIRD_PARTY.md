@@ -26,6 +26,42 @@ remain MIT.
 
 Upstream: https://github.com/aquasock/TinyNES/tree/f5011dd374cfc65f4f17616fec97c903a66b6cc8
 
+## TinyNES AE350 SoC fabric and boot ROM
+
+`fpga/tiny89_soc/` and `firmware/boot/` are copied unmodified with `cp` from
+aquasock/TinyNES at commit `f5011dd374cfc65f4f17616fec97c903a66b6cc8`, which is
+the commit verified in that checkout. Every copied file keeps its original
+header and licence: the `.sv`, `.c`, `.h`, `.S`, `.ld` and `Makefile` files
+carry TinyNES's unchanged `SPDX-License-Identifier: MIT` line, and
+`desk_font.hex` keeps its own "font8x8_basic by Daniel Hepper, public domain
+(tools/fetch_font8x8.sh)" comment. `ae350_soc.cst` and `ae350_soc.sdc` carry
+no licence header upstream either and are byte-identical here. Copied paths,
+TinyNES `fpga/ae350_soc/` and `firmware/boot/`:
+
+- `fpga/tiny89_soc/`: `ae350_soc.sv`, `ahb_boot_rom.sv`, `ahb_ram.sv`,
+  `ahb_sdram.sv`, `exts_uart.sv`, `desk_link.sv`, `wii_pads.sv`, `i2s_out.sv`,
+  `video.sv`, `ae350_soc.cst`, `ae350_soc.sdc`, `desk_font.hex`;
+- `firmware/boot/`: `main.c`, `load.c`, `load.h`, `crt0.S`, `link.ld`,
+  `Makefile`;
+- `firmware/boot/support/`: `tinynes.h` (from TinyNES `firmware/include/`),
+  `memtest.h`, `memtest.c`, `uart.h`, `uart.c` (from TinyNES
+  `firmware/common/`). These five are byte-identical copies and are the
+  register contract and the UART and memory helpers the forked boot ROM is
+  written against; a later phase repointed `firmware/boot/Makefile`'s include
+  and source paths at them. They live here rather than under
+  `firmware/common/`, which already holds the running app's own UART with a
+  different interface.
+
+Tiny89 changes exactly two things: the video unit (owned by a later phase) and
+the boot ROM's banner, which now names Tiny89. The top module stays
+`ae350_soc_top`; the UART load protocol, the register map, the pins, the PLL
+sites and the measured clocking and design rules are TinyNES's and are
+preserved. `fpga/tiny89_soc/ae350_soc.cst` and `ae350_soc.sdc` are byte-identical to
+TinyNES's; `firmware/boot/Makefile` differs only in two comment lines, named
+in `docs/tiny89-soc.md`.
+
+Upstream: https://github.com/aquasock/TinyNES/tree/f5011dd374cfc65f4f17616fec97c903a66b6cc8
+
 ## Graph89
 
 Graph89 commit `659c8da89699cb7acecb394ea8d79d69dc9474bb` was consulted as evidence that a
