@@ -199,7 +199,7 @@ if (( do_sweep )); then
     else
         echo "Seed sweep: $sweep_seeds (each is placed and routed on the one synthesis result)"
         # shellcheck disable=SC2086
-        TINY89_SWEEP_DIR="$out/sweep" SWEEP_JOBS="${TINY89_SWEEP_JOBS:-4}" \
+        TINY89_SWEEP_DIR="$out/sweep" SWEEP_JOBS="${TINY89_SWEEP_JOBS:-1}" \
             "$root/tools/sweep-tiny89-soc.sh" "$netlist" $sweep_seeds || true
         printf '%s\n' "$netlist_sha" > "$out/sweep/netlist.sha256"
     fi

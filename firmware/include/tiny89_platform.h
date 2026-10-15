@@ -8,8 +8,19 @@
 
 #define T89_UART_DATA    T89_REG(0x00)
 #define T89_UART_STATUS  T89_REG(0x04)
+#define T89_UART_RX      T89_REG(0x10)
+#define T89_UART_CTRL    T89_REG(0x14)
+#define T89_UART_LINK_MODE 0x1u /* CTRL: the line carries TinyTang's frames */
+#define T89_LINK_STATUS  T89_REG(0x18)
 #define T89_UART_TX_READY 0x01u
 #define T89_UART_TX_IDLE  0x02u
+
+/* The keyboard TinyTang forwards over the link, held by the desk link's input
+ * frame parser (desk_link.sv): the low register is {usage3, usage2, usage1,
+ * modifiers} and the high one is {sequence, usage6, usage5, usage4}.  Reading
+ * the high register is enough to see whether a new report arrived. */
+#define T89_KBD_LO       T89_REG(0x1c)
+#define T89_KBD_HI       T89_REG(0x20)
 
 #define T89_VIDEO_CTRL       T89_REG(0x10000)
 #define T89_VIDEO_STATUS     T89_REG(0x10004)
@@ -27,26 +38,6 @@
 #define T89_VIDEO_SHOWING    0x4u /* STATUS: the frame buffers are shown */
 #define T89_VIDEO_WIDTH      256u
 #define T89_VIDEO_HEIGHT     240u
-
-/* Wii Classic Controller inputs on PMOD0: four separate I2C buses, one per
- * adjacent PMOD signal pair, PMOD0's first bus being controller 0.  The
- * fifteen active-low buttons live in report bytes 4 and 5.  A pad may answer
- * without identifying as a Classic Controller, so both PRESENT and CLASSIC
- * must be set before its data is decoded.  Reading DATA also captures its
- * upper two bytes for a subsequent DATA2 read, so the pair is one coherent
- * sample. */
-#define T89_PAD_ID          T89_REG(0x40000)
-#define T89_PAD_CTRL        T89_REG(0x40004)
-#define T89_PAD_STATUS(n)   T89_REG(0x40010 + 0x10u * (n))
-#define T89_PAD_DATA(n)     T89_REG(0x40014 + 0x10u * (n))
-#define T89_PAD_DATA2(n)    T89_REG(0x40018 + 0x10u * (n))
-#define T89_PAD_IDENT(n)    T89_REG(0x4001c + 0x10u * (n))
-#define T89_PAD_ID_VALUE    0x544e5031u /* "TNP1" */
-#define T89_PAD_PRESENT     0x01u
-#define T89_PAD_CLASSIC     0x02u
-#define T89_PAD_READS(s)    (((s) >> 8) & 0xffffu)
-#define T89_PAD_FAILS(s)    ((s) >> 24)
-#define T89_PAD_QUARTER_100K 187u
 
 #define T89_CORE_HZ 750000000u
 #define T89_MCCTL_COMMAND 0x7cc

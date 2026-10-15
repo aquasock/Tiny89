@@ -23,7 +23,7 @@
 #include "libuae.h"
 #include "m68k.h"
 #include "t89_lcd.h"
-#include "t89_pad.h"
+#include "t89_key.h"
 #include "tiny89_platform.h"
 #include "ti68k_def.h"
 
@@ -104,47 +104,49 @@ static void render_frame(int gray, unsigned buffer)
 }
 
 /*
- * Sample controller 0 and hand the difference to TiEmu's keypad.
+ * Sample the keyboard the desk link holds and hand the difference to TiEmu's
+ * keypad.
  *
- * This runs every frame rather than only when the fabric's reads-completed
- * field moves.  That field advances on a successful transfer only
- * (wii_pads.sv:451); when a controller stops answering -- unplugged, asleep,
- * out of range -- the fabric clears present and classic and counts a failure
- * instead (:433-438), leaving reads frozen at its last value and DATA holding
- * the last good sample.  Gating on reads therefore misses exactly the case
- * that matters, and would leave the keys of that last sample pressed with no
- * controller present.  Three uncached register reads and one diff cost nothing
- * beside a frame of interpreted M68K.
+ * TinyTang pairs the Bluetooth keyboard and forwards its HID boot report to
+ * the core as an input frame (type 0x17), which this platform's fabric parses
+ * in desk_link.sv into the two registers the app reads here: the high one
+ * carries the newest report's last three usages and a sequence byte that
+ * advances whenever a frame arrives, and the low one carries the modifier
+ * byte and the first three usages.  So the sequence byte says whether to read
+ * at all, and the report is state rather than events: a key held down sends
+ * one report and then nothing, which is why the module diffs a report against
+ * the one it last applied rather than counting presses.
  *
- * A controller that is absent, or that answers without identifying as a
- * Classic Controller, is presented as the centred, buttonless pad
- * t89_pad_none() returns, which releases anything the module had applied.  It
- * is deliberately not a zeroed t89_pad_t: axis 0 is the stick's minimum and
- * would read as up-left held.
- *
- * With no pad unit at all (see the ID probe in main()) this is never called:
- * the whole session runs with no input.
+ * Two uncached register reads and one diff cost nothing beside a frame of
+ * interpreted M68K.
  *
  * Returns the number of key events applied, or a negative TiEmu/module error.
  */
-static int poll_pad(int have_pad, t89_keymap_t *map, t89_pad_t *pad,
-                    t89_key_event_t *events)
+/* How many calculator keys the keyboard has pressed just now, for the
+ * heartbeat: the module's own applied set is the state the emulator was told
+ * about. */
+static int keys_down(void)
 {
-    uint32_t status, lo, hi;
+    int key, n = 0;
+
+    for (key = 0; key < NB_MAX_KEYS; key++) {
+        if (ti68k_kbd_is_key_pressed(key)) n++;
+    }
+    return n;
+}
+
+static int poll_keyboard(uint8_t *last_sequence, t89_key_event_t *events)
+{
+    uint32_t hi = T89_KBD_HI;
+    uint8_t sequence = (uint8_t)(hi >> 24);
+    t89_kbd_t kbd;
     int count, i;
 
-    if (!have_pad) return 0;
+    if (sequence == *last_sequence) return 0;
+    *last_sequence = sequence;
 
-    status = T89_PAD_STATUS(0);
-    if ((status & T89_PAD_PRESENT) && (status & T89_PAD_CLASSIC)) {
-        lo = T89_PAD_DATA(0);  /* reading DATA also latches DATA2 */
-        hi = T89_PAD_DATA2(0) & 0xffffu;
-        t89_pad_decode(lo, hi, pad);
-    } else {
-        t89_pad_none(pad);
-    }
-
-    count = t89_keymap_update(map, pad, events, MAX_KEY_EVENTS);
+    t89_kbd_decode(T89_KBD_LO, hi, &kbd, 0);
+    count = t89_kbd_update(&kbd, events, MAX_KEY_EVENTS);
     if (count < 0) return count;
 
     for (i = 0; i < count; i++) {
@@ -157,14 +159,13 @@ static int poll_pad(int have_pad, t89_keymap_t *map, t89_pad_t *pad,
 int main(void)
 {
     uint8_t *flash;
-    t89_keymap_t map;
     t89_key_event_t events[MAX_KEY_EVENTS];
-    t89_pad_t pad;
-    const char *layer, *video;
-    uint32_t pad_id, video_id, frames, last_frames, last_lcd = 0;
+    const char *video;
+    uint32_t video_id, frames, last_frames, last_lcd = 0;
     uint32_t presented = 0, stable = 0;
+    uint8_t last_sequence = 0;
     unsigned buffer = 0;
-    int have_pad, gray, ready_printed = 0;
+    int gray, ready_printed = 0;
 
     printf("Tiny89 AE350 TiEmu smoke start\n");
     if ((size_t)(tiny89_flash_image_end - tiny89_flash_image) != FLASH_BYTES) {
@@ -262,16 +263,18 @@ int main(void)
      * a missing pad unit must never fail the boot: the session simply runs
      * with no input.
      */
-    t89_keymap_reset(&map);
-    t89_pad_none(&pad);
-    pad_id = T89_PAD_ID;
-    have_pad = (pad_id == T89_PAD_ID_VALUE);
-    if (have_pad) {
-        T89_PAD_CTRL = T89_PAD_QUARTER_100K;
-        printf("Tiny89 PAD OK ID=544e5031\n");
-    } else {
-        printf("Tiny89 PAD NONE ID=%08" PRIx32 "\n", pad_id);
-    }
+    t89_kbd_reset();
+
+    /* The keyboard arrives as TinyTang's frames and the fabric's desk link
+     * parses them, so the UART has to be in its link mode.  A write to CTRL
+     * completes once everything written before it has gone out, so the line
+     * below reaches the host as text first; the host loader watches for
+     * exactly that line to start reading frames instead of text (TinyNES's
+     * tools/load_ae350.py, which is also Tiny89's).  Nothing is printed after
+     * this point but frames. */
+    printf("TinyNES LINK\n");
+    T89_UART_CTRL = T89_UART_LINK_MODE;
+    printf("Tiny89 KBD seq=%u\n", (unsigned)(T89_KBD_HI >> 24));
 
     last_frames = T89_VIDEO_FRAMES;
 
@@ -288,10 +291,10 @@ int main(void)
             return 1;
         }
 
-        /* (b) Take controller input. */
-        count = poll_pad(have_pad, &map, &pad, events);
+        /* (b) Take keyboard input. */
+        count = poll_keyboard(&last_sequence, events);
         if (count < 0) {
-            printf("BAD Tiny89 pad result=%d\n", count);
+            printf("BAD Tiny89 keyboard result=%d\n", count);
             return 1;
         }
 
@@ -327,14 +330,13 @@ int main(void)
 
             /* (e) One heartbeat per HEARTBEAT_FRAMES presented frames. */
             if (presented % HEARTBEAT_FRAMES == 0u) {
-                layer = t89_layer_name(map.layer);
                 printf("Tiny89 FRAME n=%u PC=%08" PRIx32 " CYC=%u"
-                       " LCD=%08" PRIx32 " VBL=%u PAD=%04x KEYS=%d"
-                       " LAYER=%s VID=%s",
+                       " LCD=%08" PRIx32 " VBL=%u KBDS=%u KEYS=%d"
+                       " VID=%s",
                     (unsigned)presented, (uint32_t)m68k_getpc(),
                     (unsigned)hw_m68k_get_cycle_count(0), hash,
-                    (unsigned)frames, (unsigned)(pad.buttons & 0xffffu),
-                    map.applied_count, layer ? layer : "?", video);
+                    (unsigned)frames, (unsigned)last_sequence,
+                    keys_down(), video);
                 if (gray) printf(" LCDMODE=%s", t89_lcd_mode());
                 printf("\n");
             }

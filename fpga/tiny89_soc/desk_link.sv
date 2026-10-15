@@ -80,7 +80,16 @@ module desk_link #(
     // Bit 0 layer_on, bit 1 the overlay, bit 2 the enable, bit 3 a cell
     // was lost (sticky), bits 15:8 frames received, bits 31:16 cells
     // written (both wrap).
-    output wire [31:0] status
+    output wire [31:0] status,
+
+    // The newest keyboard report TinyTang has sent as an input frame (0x17),
+    // in its own HID boot layout: the modifier byte and six usage codes.
+    // `kbd_lo` is {usage3, usage2, usage1, modifiers} and `kbd_hi` is
+    // {sequence, usage6, usage5, usage4}, so a reader that watches the
+    // sequence byte has a whole report in two reads.  TinyTang sends a frame
+    // only when the report changes.
+    output reg  [31:0] kbd_lo,
+    output reg  [31:0] kbd_hi
 );
     localparam integer COLS = 80, ROWS = 45, CELLS = COLS * ROWS;
     localparam integer TA = $clog2(TEXT_MAX);
@@ -102,6 +111,8 @@ module desk_link #(
     reg overlay = 1'b0, enable = 1'b0, lost = 1'b0;
     reg [7:0] frames = 8'd0;
     reg [15:0] cells = 16'd0;
+    reg [55:0] kbd_shift = 56'd0;
+    reg [7:0] kbd_seq = 8'd0;
     reg id_req = 1'b0;
 
     assign layer_on = link && overlay && enable;
@@ -120,6 +131,10 @@ module desk_link #(
             lost <= 1'b0;
             frames <= 8'd0;
             cells <= 16'd0;
+            kbd_shift <= 56'd0;
+            kbd_seq <= 8'd0;
+            kbd_lo <= 32'd0;
+            kbd_hi <= 32'd0;
             cell_valid <= 1'b0;
             cell_addr <= 12'd0;
             cell_data <= 37'd0;
@@ -182,6 +197,20 @@ module desk_link #(
                                         cell_data <= {b0[6:0], b1[6:0], b2, b3[6:0], rx_data};
                                         cells <= cells + 1'b1;
                                         cursor <= cursor + 1'b1;
+                                    end
+                                end
+                            8'h17:
+                                // The keyboard's report, seven bytes: the
+                                // modifier first, then six usages, shifted in
+                                // so that the last byte completes it.
+                                begin
+                                    kbd_shift <= {kbd_shift[47:0], rx_data};
+                                    if (left == 11'd1) begin
+                                        kbd_lo <= {kbd_shift[23:16], kbd_shift[31:24],
+                                                   kbd_shift[39:32], kbd_shift[47:40]};
+                                        kbd_hi <= {kbd_seq, rx_data,
+                                                   kbd_shift[7:0], kbd_shift[15:8]};
+                                        kbd_seq <= kbd_seq + 1'b1;
                                     end
                                 end
                             default: ;

@@ -26,7 +26,7 @@ src="$root/fpga/tiny89_soc"
 suite="${OSS_CAD_SUITE:-$HOME/oss-cad-suite}"
 nextpnr="${NEXTPNR_HIMBAECHEL:-$HOME/tools/nextpnr-mathieufro/nextpnr-himbaechel}"
 out="${TINY89_SWEEP_DIR:-$root/build/sweep}"
-jobs="${SWEEP_JOBS:-2}"
+jobs="${SWEEP_JOBS:-1}"
 
 [[ -f "$json" ]] || { echo "missing netlist: $json" >&2; exit 2; }
 # shellcheck disable=SC1090
@@ -60,12 +60,26 @@ print(f\"{min(v['achieved'] for v in t.values() if abs(v['constraint']-74.25)<0.
 }
 printf 'sweep: seeds %s, %s at a time\n' "${seeds[*]}" "$jobs"
 declare -a pids=()
+reap_alive() {
+    local alive=() p
+    for p in "${pids[@]:-}"; do
+        [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null && alive+=("$p")
+    done
+    pids=("${alive[@]:-}")
+}
 for n in "${seeds[@]}"; do
+    # Wait until fewer than `jobs` children are actually alive. Counting how
+    # many were started is not enough, and neither is `jobs -r`: inside a
+    # command substitution `jobs` runs in a subshell with no job table of its
+    # own and reports nothing, so the loop outran its own limit and put all
+    # eight placements on this machine at once. kill -0 asks the kernel.
+    reap_alive
+    while (( ${#pids[@]} >= jobs )); do
+        wait -n
+        reap_alive
+    done
     run_seed "$n" &
     pids+=("$!")
-    if (( ${#pids[@]} >= jobs )); then
-        wait -n
-    fi
 done
 wait
 echo "sweep done: $out"

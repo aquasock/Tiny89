@@ -18,8 +18,10 @@
 // (exts_uart), and drives the HDMI port at 1280x720 60 Hz (video) from two
 // frame buffers in the top 128 KiB of the SDRAM, read through the SDRAM's
 // video channel, with its registers, palette and emphasis in the EXTS
-// window at 0xe8010000. Four Wii Classic Controllers on PMOD0 are read at
-// 0xe8040000 (wii_pads), and stereo I2S for a Pmod I2S2 on PMOD1 is fed
+// window at 0xe8010000. No controller is read: the forked fabric's Wii pad
+// unit on PMOD0 is gone, and Tiny89's input is the keyboard TinyTang sends
+// over the link, which the desk link holds in its keyboard registers. Stereo
+// I2S for a Pmod I2S2 on PMOD1 is fed
 // through a sample FIFO at 0xe8050000 (i2s_out). In the UART's link mode
 // (desk_link) the line carries TinyTang's frames instead, and TinyDesk's
 // layer is drawn over the picture.
@@ -59,7 +61,6 @@ module ae350_soc_top #(
     output wire        tmds_clk_n,
     output wire [2:0]  tmds_d_p,
     output wire [2:0]  tmds_d_n,
-    inout  wire [7:0]  pmod0,
     // Pmod I2S2 seated normally on PMOD1: its DAC's MCLK, LRCK, SCLK and
     // SDIN on Digilent pins 1-4. Pins 7-10, the ADC, are left unused.
     output wire [3:0]  pmod1_dac
@@ -254,24 +255,30 @@ module ae350_soc_top #(
     wire link_idle, link_flush;
     wire [7:0] rx_link_data, txt_data, ln_data;
     wire [31:0] link_status;
-    wire [15:0] pad0_held;
+    wire [31:0] kbd_lo, kbd_hi;   // the desk link's newest keyboard report
     wire layer_on, cell_valid, cell_ready;
     wire [11:0] cell_addr;
     wire [36:0] cell_data;
 
-    // The EXTS window: 0xe8010000 selects video, 0xe8040000 selects the
-    // Wii pads, 0xe8050000 the audio, and 0xe8000000 selects UART. The open flow has no
-    // timing model for the AE350's ports, so each path to or from them has
-    // at most one LUT: HREADY is the AND of the slaves' registered HREADYs,
-    // HRESP their OR, and read data a mux on a registered UART select.
+    // The EXTS window: 0xe8010000 selects video, 0xe8050000 the audio, and
+    // 0xe8000000 selects UART. 0xe8040000, where the forked fabric decoded Wii
+    // pads, now answers reads with zero and never stalls: Tiny89's input is a
+    // keyboard on the link. The open flow has no timing model for the AE350's
+    // ports, so each path to or from them has at most one LUT: HREADY is the
+    // AND of the slaves' registered HREADYs, HRESP their OR, and read data a
+    // mux on a registered UART select.
     wire video_hit = !exts_addr[18] && (exts_addr[17] | exts_addr[16]);
     wire pads_hit = exts_addr[18] && !(exts_addr[17] | exts_addr[16]);
     wire audio_hit = exts_addr[18] && !exts_addr[17] && exts_addr[16];
     reg data_uart = 1'b1;
-    wire [31:0] uart_rdata, video_rdata, pads_rdata, audio_rdata;
-    wire uart_ready, uart_resp, video_ready, video_resp, pads_ready, pads_resp;
+    wire [31:0] uart_rdata, video_rdata, audio_rdata;
+    wire uart_ready, uart_resp, video_ready, video_resp;
     wire audio_ready, audio_resp;
-    always @(posedge bus_clk or negedge resetn)
+    /* The pad window stays in the address decode and answers nothing: Tiny89's
+     * input is the keyboard on the link, not a controller on PMOD0. */
+    wire [31:0] pads_rdata = 32'd0;
+    wire pads_ready = 1'b1;
+    wire pads_resp = 1'b0;    always @(posedge bus_clk or negedge resetn)
         if (!resetn)
             data_uart <= 1'b1;
         else if (exts_ready)
@@ -297,6 +304,8 @@ module ae350_soc_top #(
         .fb_data(fb_data),
         .fb_ready(fb_ready),
         .cpu_owns(cpu_owns),
+        .kbd_lo(kbd_lo),
+        .kbd_hi(kbd_hi),
         .link(link),
         .rx_link_valid(rx_link_valid),
         .rx_link_data(rx_link_data),
@@ -321,40 +330,15 @@ module ae350_soc_top #(
         .flush(link_flush),
         .ln_valid(ln_valid), .ln_data(ln_data), .ln_ready(ln_ready),
         .idle(link_idle),
-        .pad_held(pad0_held),
+        .pad_held(16'd0),
         .cell_valid(cell_valid), .cell_addr(cell_addr), .cell_data(cell_data),
         .cell_ready(cell_ready),
         .layer_on(layer_on),
-        .status(link_status)
+        .status(link_status),
+        .kbd_lo(kbd_lo),
+        .kbd_hi(kbd_hi)
     );
 
-    wire [3:0] pad_scl_in, pad_sda_in, pad_scl_low, pad_sda_low;
-    genvar pad_index;
-    generate
-        for (pad_index = 0; pad_index < 4; pad_index = pad_index + 1) begin : pad_io
-            // Digilent pins 1-4 are SCL, pins 7-10 are SDA. Sipeed's IO
-            // numbering interleaves the rows: each controller uses a pair.
-            IOBUF scl_buf (
-                .I(1'b0), .OEN(!pad_scl_low[pad_index]),
-                .O(pad_scl_in[pad_index]), .IO(pmod0[2*pad_index])
-            );
-            IOBUF sda_buf (
-                .I(1'b0), .OEN(!pad_sda_low[pad_index]),
-                .O(pad_sda_in[pad_index]), .IO(pmod0[2*pad_index+1])
-            );
-        end
-    endgenerate
-
-    wii_pads pads (
-        .clk(bus_clk), .resetn(resetn),
-        .haddr(exts_addr[11:0]), .htrans(exts_trans),
-        .hsel(exts_sel && pads_hit), .hwrite(exts_write),
-        .hsize(exts_size), .hwdata(exts_wdata), .hready_in(exts_ready),
-        .hrdata(pads_rdata), .hready(pads_ready), .hresp(pads_resp),
-        .scl_in(pad_scl_in), .sda_in(pad_sda_in),
-        .scl_low(pad_scl_low), .sda_low(pad_sda_low),
-        .pad0_held(pad0_held)
-    );
 
     // The instance name sorts after "bus_clk": Yosys names a flattened net
     // after the alphabetically first of its names, and nextpnr's

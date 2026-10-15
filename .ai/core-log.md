@@ -196,3 +196,45 @@ Decide the next cycle; the four-level grayscale needs TiEmu's plane model to be 
 - User Test: PASS
 
 ---
+
+## 5 COMMIT Unreleased 2026-10-15T09:32:09-07:00
+
+#### Coming From:
+
+Unreleased acc1297
+
+#### Purpose:
+
+Replace the PMOD0 controller with the board's Bluetooth keyboard, so the calculator is driven by a Logitech keyboard that TinyTang forwards to the core, following the mouse path TinyCreature proved.
+
+#### Outcome:
+
+TinyTang gained the core-directed input frame `FPGA_CMD_KEYBOARD 0x17` in `ports/bl616/tang_fpga_link.h` and a sender beside the mouse's in `ports/bl616/tang_osd_desk.c`, carrying the Bluetooth keyboard's HID boot report -- the modifier byte and six usage codes -- sent only when the report changes, because a boot keyboard reports state rather than events; only the Bluetooth keyboard is forwarded, the wired report being one a core has sent and would only be echoed back. That firmware builds to 623,968 bytes with SHA-256 `31a303c2e9fc250b56428db5d5e3827f7e510156b2a238295b9b9f859b3d8533`, was installed with TinyTang's own `tools/tinytang_flash.py` and a power cycle, and the board now reports `62fe6a7-dirty.616fce5` against `6145683-dirty.7381d83` before it; two earlier flash attempts sat unanswered on that tool's interactive `install ... [y/N]` prompt, which is why nothing reached the board and its last command stayed `platform`. In Tiny89, `fpga/tiny89_soc/ae350_soc.sv` no longer instantiates the forked `wii_pads` unit and no longer routes PMOD0, with those pins dropped from `ae350_soc.cst` and the pad window left decoded but answering zero; `desk_link.sv` parses `0x17` into a report split over two registers, `0x1c` as {usage3, usage2, usage1, modifiers} and `0x20` as {sequence, usage6, usage5, usage4}, with the sequence advancing per frame; `exts_uart.sv` reads them. `firmware/common/t89_key.c` maps HID usages to TiEmu keys -- arrows, Enter, Escape and Backspace, Tab for 2nd, F1 to F4 for the diamond, ALPHA, MODE and CATALOG, the digits, the letters and the arithmetic keys including the keypad -- with the modifiers deliberately unmapped, and `firmware/apps/tiemu_smoke/main.c` polls the sequence byte, diffs a report against the one it last applied, and puts the UART in its link mode after printing `TinyNES LINK`, the line TinyNES's loader watches for, because while the host's pipe owns the link no frame can reach the core. The app builds to 4,627,562 bytes of text and the mapping's host test reports `t89_key: 31 checks passed`; the eight-seed platform build passed every gate at seed 8 with no hold violations and no pixel-clock fallbacks, bus 83.97 MHz and pixel 92.32 MHz, and packed a 4,762,092-byte image at SHA-256 `65e4b59a` -- but that image was packed from a build that had started before these sources changed, and it carries neither the keyboard registers nor the pad removal. That is what the deployment shows: the app booted, reported `Tiny89 VIDEO T89V` and `TinyNES LINK`, and then took a load access fault, `BAD Tiny89 TRAP 00000005 4000021e e8000020`, reading exactly the address of the high keyboard register -- a new program on a fabric that has no such register, which both the trap's address and the netlist's missing `kbd` cells agree on. Three faults of this session's own are recorded because each cost a cycle: a build invocation reported as failed that had in fact started and kept running for thirty minutes, so two builds wrote the same output directory while an older one packed stale artifacts; the sweep's concurrency limiter let all eight placements run at once, twice, the second attempt using `jobs -r` inside a command substitution where a subshell has no job table, so both tools now default to one placement at a time; and one edit was made with index arithmetic that duplicated a region of `ae350_soc.sv` instead of deleting it, which was reverted and redone. The user deferred the cycle here for a handoff rather than continue. The required core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged, validated this sequential entry's six sections, prose, Status values and the log's five-entry count, and confirmed that no settled entry was rewritten.
+
+#### Next Steps:
+
+A clean platform build was still running when this cycle was deferred, into `build/tiny89_soc_new` rather than the directory the stale images came from, and it has not been deployed or tested. The next step is to deploy that image and run the app: it is the first image built from these sources, so if the app still traps on `0xe8000020` the fault is in this repository's fabric logic rather than in a stale artifact, and a diagnostic that reads `0xe8000020` and the retired pad window at `0xe8040000` -- which the new fabric answers as zero and the old one answered as `544e5031` -- tells the two fabrics apart in one run. TinyTang's `0x17` change is in that repository's tree uncommitted and is already flashed on the board, so the handoff includes it; the pad mapping module `firmware/common/t89_pad.c` remains built and tested but is no longer used by the app, and the video unit's FRAMES testbench disagreement from entry 4 is still open.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/main.c
+- firmware/common/t89_key.c
+- firmware/common/t89_key.h
+- firmware/include/tiny89_platform.h
+- fpga/tiny89_soc/ae350_soc.cst
+- fpga/tiny89_soc/ae350_soc.sv
+- fpga/tiny89_soc/desk_link.sv
+- fpga/tiny89_soc/exts_uart.sv
+- tests/run_t89_key_test.sh
+- tests/test_t89_key.c
+- tools/build-tiny89-soc.sh
+- tools/sweep-tiny89-soc.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: FAIL
+- User Test: NOT RUN
+
+---
