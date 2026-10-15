@@ -1,0 +1,11 @@
+/build/
+/third_party/
+__pycache__/
+*.py[cod]
+
+# TI operating-system and calculator image material is private and must not be
+# committed, regardless of where a developer stages it in this repository.
+*.89u
+*.img
+*.rom
+*.raw
