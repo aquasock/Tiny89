@@ -62,10 +62,23 @@ printf 'sweep: seeds %s, %s at a time\n' "${seeds[*]}" "$jobs"
 declare -a pids=()
 reap_alive() {
     local alive=() p
-    for p in "${pids[@]:-}"; do
-        [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null && alive+=("$p")
+    # "${pids[@]:-}" on an empty array expands to one EMPTY element rather than
+    # to nothing, so this used to count an empty set as one placement: with the
+    # default SWEEP_JOBS=1 the loop below then ran `wait -n` with no child to
+    # wait for, over and over, at 100% of a core, and never placed a seed at
+    # all.  The count comes from the array itself, and the rewritten array is
+    # left truly empty; tests/run_sweep_limiter_test.sh fails on the old form.
+    if ((${#pids[@]} == 0)); then
+        return 0
+    fi
+    for p in "${pids[@]}"; do
+        kill -0 "$p" 2>/dev/null && alive+=("$p")
     done
-    pids=("${alive[@]:-}")
+    pids=()
+    if ((${#alive[@]})); then
+        pids=("${alive[@]}")
+    fi
+    return 0
 }
 for n in "${seeds[@]}"; do
     # Wait until fewer than `jobs` children are actually alive. Counting how

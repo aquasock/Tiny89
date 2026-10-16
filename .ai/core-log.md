@@ -238,3 +238,34 @@ A clean platform build was still running when this cycle was deferred, into `bui
 - User Test: NOT RUN
 
 ---
+
+## 6 COMMIT Unreleased 2026-10-16T05:17:32-07:00
+
+#### Coming From:
+
+Unreleased c0fac6b
+
+#### Purpose:
+
+Finish Tiny89's keyboard: put a fabric with the keyboard registers on the board, and get the Logitech keyboard driving the calculator.
+
+#### Outcome:
+
+The keyboard was already written and host-tested by entry 5; what was wrong was the image on the board. The card's `/root/cores/console138k/tiny89.bin` was 4,762,092 bytes -- entry 5's stale pack, made from a build that raced its own source edits -- so the app's read of the high keyboard register at `0xe8000020` took a load access fault. Nothing in the tree was half-applied: `main` was clean and entry 5's handoff is an honest account. The first obstacle to rebuilding was `tools/sweep-tiny89-soc.sh` itself: its concurrency limiter counted `"${pids[@]:-}"`, which on an EMPTY array expands to one empty element rather than to nothing, so `${#pids[@]}` was 1 with no child running, the loop called `wait -n` on an empty set for ever, and the sweep span at 100% of a core without launching a single placement -- with `SWEEP_JOBS=1`, the default, and therefore on every build. That is what stopped the previous cycle and what I repeated before finding it: my own first two attempts put a second sweep over the first one's directory, which entry 5's own account warns about, and I record it here. The limiter now takes its count from the array itself and leaves it truly empty, and `tests/run_sweep_limiter_test.sh` runs the real script against a stub placer and asserts, for `SWEEP_JOBS=1` and `2`, that every seed is placed and that overlaps never exceed the limit; it fails on the old script exactly as diagnosed (exit 124, 0 of 4 seeds placed) and passes on the fixed one, six checks. With that fixed and `TINY89_SWEEP_JOBS=8` the sweep places all eight seeds in parallel in about eight minutes; the ranking was seed 4 (holds 0, fallbacks 33, bus 85.23, pixel 80.04), seed 6 (10, 22, 88.07, 82.43), seed 8 (10, 27, 83.58, 82.46), seed 3 (10, 31, 91.36, 82.60), seed 1 (10, 58, 83.30, 84.43), seed 5 (10, 62, 88.85, 86.26), seed 7 (10, 95, 84.59, 83.28) and seed 2 (10, 109, 88.70, 84.16); seed 4 is the only placement with no pixel-clock hold violation, which the rule puts first, and it was packed after passing every gate -- the AE350's PLL hop, 85.23 MHz on the bus, 80.04 MHz on the pixel clock, twelve video block RAMs on one clock in a 9-bit mode, and the pixel clock reaching the spines only through SPINE26 <= CBRIDGEOUT_BOTTOM2. The evidence that this is the right image and not another stale one is that my synthesis from the committed tree reproduced the previous build's netlist hash exactly (`4a07c020e89b35ff9eb58c2a33b475e3dfd865509a409fab9b7972163badfbcd`) and that packing it reproduced that build's image bit for bit, so the correct fabric had been on disk all along. It is 4,698,604 bytes with SHA-256 `ec9b3027050c49791110eefd84e8390b8a0b21b7892fec29f0bfcc8025c77131`, put on the card as `/root/cores/console138k/tiny89.bin` with TinyTang's `tangput`, and loaded with `tangload`. The app, `e971e7e9cc262b9bb8fb1439ca4d913bec4df4e729b03061fb8df934cc2b725e`, then booted with no fault at all: `Tiny89 VIDEO T89V`, `Tiny89 KBD seq=0` -- the register that used to fault, read and answered -- `Tiny89 READY`, and a heartbeat whose fields are now `KBDS` and `KEYS` with no `PAD OK` line, because the pad unit is gone. The keyboard then worked: the user reached the AMS home screen and did arithmetic on it. Two things about the path were learned on the way and belong in the record. First, why every watched run showed `KBDS=0`: TinyNES's `load_ae350.py --tinytang` drives the board's `fpgapipe`, which hands the link to the host and holds it for the whole run, so while a PC is reading the program the board's desk layer sends nothing at all -- the same exclusivity entry 79 found for the mouse -- and the working sequence is to load the core, start the program, let the reader go, and then type, with the program still running in the AE350's SDRAM. Second, why a launch costs about a minute: the program is 4,662,148 bytes and goes over the link at 186.5 KB/s, and 4,194,304 of those bytes -- 90 percent -- are the proprietary TI-OS image, which `firmware/apps/tiemu_smoke/Makefile` links into the app through `flash.S` and `flash.raw`, so the whole operating system is re-sent on every launch, and TiEmu then builds its 1866 CPU functions at runtime. That is a defect in how the app was put together rather than a limit of the board, and the fix -- hold the OS in the dock's 32 MiB SDRAM and stop re-sending it, or serve it from the card through the BL616's file server -- is its own cycle. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` unchanged, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Stop streaming the operating system into the AE350 on every launch: keep the 4 MiB image in the dock's SDRAM and have the app read it there, or serve it from the card through the BL616, which would take a launch from about a minute to about three seconds. Record the working Tiny89 sequence where a user will find it: `tangload` the core, run the program through the loader, let the loader go, and only then drive it from the keyboard, because the loader owns the link for the whole run. TinyTang now carries an unflashed fix of its own -- the keyboard frame is sent only from `desk_poll()`, which runs while the desk layer is enabled, so a key does nothing when the layer is off -- built and host-tested but not yet on the board; the Tiny89 case works without it because the layer is on there. Entry 4's open items stand: the video unit's FRAMES testbench disagreement, and the four-level grayscale path implemented but not demonstrated, every heartbeat still reading `LCDMODE=1bit`.
+
+#### Files Modified:
+
+- tests/run_sweep_limiter_test.sh
+- tools/sweep-tiny89-soc.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---
