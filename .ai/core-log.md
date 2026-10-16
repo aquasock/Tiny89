@@ -269,3 +269,34 @@ Stop streaming the operating system into the AE350 on every launch: keep the 4 M
 - User Test: PASS
 
 ---
+
+## 7 COMMIT Unreleased 2026-10-16T05:35:13-07:00
+
+#### Coming From:
+
+Unreleased 84a1f3e
+
+#### Purpose:
+
+Correct the two horizontal arrows in the keyboard mapping, which the user found swapped on the board, and close the test gap that let them be swapped.
+
+#### Outcome:
+
+`firmware/common/t89_key.c`'s binding table named the two horizontal arrows the wrong way round: usage `0x4F` was bound to `TIKEY_LEFT` and `0x50` to `TIKEY_RIGHT`, where the HID usage table has `0x50` as Left Arrow and `0x4F` as Right Arrow. Up (`0x52`) and Down (`0x51`) were already right, which is why only the two horizontal keys misbehaved. The user found it by pressing them, and the two entries now carry the spec's usage. It had survived entry 5's audit and this cycle's review because `tests/test_t89_key.c` checked the table for up and down only -- both horizontal arrows were simply unverified -- so the test now checks all four arrows; it reports 33 checks, and putting the old binding back fails exactly the two new ones, `map: 0x50 is left` and `map: 0x4f is right`. The program was rebuilt with `tools/build-ae350-probe.sh` to 4,627,562 bytes of text, ELF SHA-256 `b69a53012367428480cf2bd8c7f33352f1b63e5447f5e5364c13647d51f9dd37` where the deployed one had been `e971e7e9cc262b9bb8fb1439ca4d913bec4df4e729b03061fb8df934cc2b725e`, and deployed as a program load rather than a firmware flash: `tangload` of the card's `tiny89.bin` and then the ELF over the link. The user validated the mapped keys on the board and reports the keyboard working well. One fault of this session's is recorded because it cost the user a test: `load_ae350.py --tinytang` drives the board's `fpgapipe`, which owns the link for the whole run, and I gave the loader a 120-second window, so it was still holding the wire while the user pressed keys -- which reads as the keyboard having broken, when in fact the desk layer was sending nothing by design. The loader is now stopped as soon as the app reports `Tiny89 READY`, a few seconds into the run, so no dead window is left between the picture coming up and the keyboard working. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` unchanged, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+The mapping itself is the next cycle, and the gaps are named: the calculator's `ON`, `CLEAR`, `HOME`, `APPS`, `ENTER2`, `SHIFT`, `HAND`, `STO`, `NEGATE`, `EE`, `POWER`, `SIN`, `COS`, `TAN`, `LN`, `THETA`, `NU`, `SPACE` and its own `F1` to `F8` reach it as nothing today. Two of these matter more than the rest: `ON` and `CLEAR` are the keys a calculator user presses most, and the main row cannot produce `PLUS` or `MULTIPLY` at all, because those are Shift+`=` and Shift+`8` and the modifier byte is deliberately unmapped, so the report carries `EQUALS` and `TIKEY_8` instead. Fixing that means either honouring Shift or claiming the free PC keys -- `F5` to `F12`, `Home`, `End`, `Delete`, `Insert`, `Page Up` and `Page Down` -- for the missing calculator keys. Then the launch cost: 4,194,304 of the 4,662,148 bytes sent on every launch are the proprietary OS linked into the program through `flash.S`, which is a defect in how the app was put together rather than a limit of the board, and holding that image in the dock's SDRAM would take a launch from about a minute to about three seconds. TinyTang still carries its unflashed hidden-branch keyboard fix, and entry 4's two open items stand: the video unit's FRAMES testbench disagreement, and the four-level grayscale path implemented but not demonstrated, every heartbeat still reading `LCDMODE=1bit`.
+
+#### Files Modified:
+
+- firmware/common/t89_key.c
+- tests/test_t89_key.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

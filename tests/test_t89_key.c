@@ -70,6 +70,8 @@ int main(void)
     /* The mapping names what it should and nothing else. */
     check(t89_kbd_key(0x52) == TIKEY_UP, "map: 0x52 is up");
     check(t89_kbd_key(0x51) == TIKEY_DOWN, "map: 0x51 is down");
+    check(t89_kbd_key(0x50) == TIKEY_LEFT, "map: 0x50 is left");
+    check(t89_kbd_key(0x4F) == TIKEY_RIGHT, "map: 0x4f is right");
     check(t89_kbd_key(0x28) == TIKEY_ENTER1, "map: enter");
     check(t89_kbd_key(0x29) == TIKEY_ESCAPE, "map: escape");
     check(t89_kbd_key(0x2A) == TIKEY_BACKSPACE, "map: backspace");

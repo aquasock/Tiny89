@@ -27,9 +27,12 @@ typedef struct {
 } t89_bind_t;
 
 static const t89_bind_t t89_binds[] = {
-    /* the four arrows */
+    /* the four arrows, by their HID usage names: 0x52 Up, 0x51 Down,
+     * 0x50 Left, 0x4F Right.  Left and right were the wrong way round until
+     * 2026-10-16 -- the table named 0x4F left and 0x50 right, which the host
+     * test did not catch because it checked only up and down. */
     { 0x52, TIKEY_UP }, { 0x51, TIKEY_DOWN },
-    { 0x4F, TIKEY_LEFT }, { 0x50, TIKEY_RIGHT },
+    { 0x50, TIKEY_LEFT }, { 0x4F, TIKEY_RIGHT },
     /* editing */
     { 0x28, TIKEY_ENTER1 }, { 0x29, TIKEY_ESCAPE }, { 0x2A, TIKEY_BACKSPACE },
     /* the calculator's own modifiers and menus, on the top row */
