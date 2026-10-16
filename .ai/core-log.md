@@ -399,3 +399,35 @@ The `DIAG=1` image builds but was never run on the board, so a cycle that needs 
 - User Test: PASS
 
 ---
+
+## 11 COMMIT Unreleased 2026-10-16T07:32:59-07:00
+
+#### Coming From:
+
+Unreleased 42338a7
+
+#### Purpose:
+
+Finish the keyboard mapping, so the calculator's own keys -- the arithmetic the main row could not reach, the functions, and the menu and editing keys -- are all reachable from the paired Bluetooth keyboard.
+
+#### Outcome:
+
+`firmware/common/t89_key.c` now holds two tables instead of one. The plain table gained the calculator's own keys, on the PC keys that had no other job here: `Space` to `SPACE`, `Caps Lock` to `HAND`, `Insert` to `APPS`, `Home` to `HOME`, `PageUp` to `STORE`, `Delete` to `CLEAR`, `End` to `ON`, `PageDown` to `EE`, `F6`, `F7` and `F8` to `SIN`, `COS` and `TAN`, and `F9`, `F10` and `F11` to `LN`, `NU` and `THETA`; keypad `Enter` moved from `ENTER1` to `ENTER2`, which is the one binding whose meaning changed rather than being added. A second table, `t89_shift_binds`, holds what Shift turns a key into, and `implied()` now reads the report's modifier byte for the shift bits (`0x02` and `0x20`, the low bits of usages `0xE1` LeftShift and `0xE5` RightShift) and consults it first, falling through to the plain table so Shift with an arrow or a letter is still that key. The four shifted keys are the arithmetic the main row could not reach, and each is the character the standard's own name for the key says it produces: `Shift+=` is `PLUS` (`0x2E` is `= and +`), `Shift+8` is `MULTIPLY` (`0x25` is `8 and *`), `Shift+6` is `POWER` and `Shift+-` is `NEGATE`; `Shift+F1` to `Shift+F8` are the calculator's own soft keys, which leaves `F1` to `F4` free to stay `DIAMOND`, `ALPHA`, `MODE` and `CATALOG`. `firmware/common/t89_key.h` declares the second lookup and its comment no longer claims the modifiers are unmapped. Every calculator key now has a home except `SHIFT`, deliberately: a boot report keeps Shift in the modifier byte rather than in its six usage slots, and that bit is what chooses between the tables, so forwarding it as a key as well would press the calculator's shift on every shifted key. The mapping was written against a source rather than recall. HID Usage Tables for USB 1.4 section 10 was fetched from usb.org, every usage already in use was checked against it -- which confirmed the two horizontal arrows entry 7 corrected and found no other binding wrong -- and it is now recorded as `KEY-001` in `.ai/core-reference.md`, with an index line and a routing row, marked SOURCED rather than VERIFIED because the codes added this cycle had not been confirmed on hardware when the record was written. The host test grew from 33 checks to 134: every binding, plain and shifted, now carries the usage's name from that section, which is the gap that let the arrows be swapped for two cycles, and the shift layer has its own checks for both Shift bits, for falling through, and for a release finding the key's ordinary meaning again. The test was proved to have teeth rather than merely to pass: with `F6`'s usage and the shifted-`8` binding deliberately broken it returned exactly `FAIL map: 0x3f is F6`, `FAIL map: 0x40 is F7` and `FAIL shift map: 0x25 is 8 and * held`, and restoring the file returned 134 passing. The program builds to 436704 bytes of text, 346 more than entry 10's, and the deployed artifact is 476112 bytes at SHA-256 `251968ffa96114cbdaf1ddcc5980f1cabd0c88d3626be052b5c22d26715136e0`, put on the card with TinyTang's `tinytang_put.py` at `/root/ae350/tiemu_smoke.elf` and read back there. On the board it boots exactly as entry 10's image did -- `SSP=00004c00 PC=00812188`, `Tiny89 VIDEO T89V`, `TinyNES LINK`, `Tiny89 READY PC=0095c5e6 LCD=5ed11146` -- and stays quiet. The user tested the mapping on the board through the Bluetooth keyboard and reports it passing. Three smaller things are recorded. Two bindings keep meanings that no PC key justifies -- `;` reaches `COMMA` a second time and the apostrophe key reaches `PIPE`, whose own key is Shift with the backslash -- and the user chose to keep both as they are. My own checks of the mapping were wrong twice before they were right, first a regular expression too narrow to read every usage name and then one that could not match the apostrophe key's escaped quote, and both were corrected before the source and test tables were confirmed to agree on all 89 bindings; the code was never at fault. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged, validated this sequential entry's six sections, prose, Status values and the log's eleven-entry count, and confirmed that no settled entry was rewritten.
+
+#### Next Steps:
+
+The next cycle the user named is persistent calculator state, which entries 4 and 6 deferred by instruction and which is the last thing between this emulator and a calculator that keeps its memory. The path already exists on the other side: TinyTang's `ae350run` implements TinyNES's `TinyNES NVRAM WANT` and `TinyNES NVRAM SAVE` text protocols and keeps a cartridge's save under `/root/saves/nes/`, so a Tiny89 program that asked for the calculator's RAM at start-up and handed it back at the end would need agreement on where that file lives on the card rather than new machinery on the board. `firmware/apps/tiemu_smoke/main.c` seeds `img_infos` from the converted image and never writes anything back, so the RAM the calculator believes it has is the emulator's own and is lost at every reset. `KEY-001` stays SOURCED until the codes this cycle added are confirmed on hardware; the two odd bindings above remain the user's to move or keep; the `DIAG=1` image still builds without having been run on the board; the BL616 heap still refuses a 16384-byte script worker stack while the calculator runs; and entry 4's two open items stand, the video unit's `FRAMES` testbench disagreement and the four-level grayscale path still reporting `LCDMODE=1bit` on every heartbeat.
+
+#### Files Modified:
+
+- firmware/common/t89_key.c
+- firmware/common/t89_key.h
+- tests/test_t89_key.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

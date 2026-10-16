@@ -114,7 +114,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 | Which CPU behaviours and exceptions must be reproduced? | CPU | No live record; obtain the architecture manual and calculator evidence |
 | What is the calculator memory map? | ASIC, MEM | No live record; obtain primary hardware documentation before implementation |
 | How do LCD timing and grayscale work? | LCD | No live record; obtain primary documentation and hardware observations |
-| How is the keyboard scanned? | KEY | No live record; obtain a schematic or equivalent primary record |
+| How is the keyboard scanned? | KEY | No live record for the calculator's own matrix; KEY-001 covers the Bluetooth keyboard's reports |
 | What do the link and USB interfaces expose? | IO | No live record; obtain primary interface documentation |
 | Which emulator implementation is the current software base? | EMU | EMU-001 |
 | What does the supplied TI-89 Titanium OS image contain, and has it booted? | OS | OS-001 |
@@ -131,6 +131,7 @@ Topic IDs are the `record_id` prefix. An entry reserves a name; it does not clai
 One line per live record, in the order of section 5. Retired ids are in section 8.
 
 ```yaml
+KEY-001: "The Bluetooth keyboard's reports arrive as HID Keyboard/Keypad page 0x07 usages, and a usage's name in the standard carries the shifted character its key produces"
 OS-001: "The private TI-89 Titanium 3.10 upgrade image converts deterministically to a 4 MiB raw image and has booted to the Apps desktop on Tiny89's AE350/TiEmu build"
 EMU-001: "TiEmu 2b8df92 is Tiny89's current GPL-2.0 emulator implementation base; its generated MC68000 core and Titanium hardware path compiled for RV32IMAC and booted the private OS on the Tang"
 EMU-002: "Graph89 659c8da is architecture evidence that TiEmu can be hosted headlessly on ARM; no Graph89 source is incorporated into Tiny89"
@@ -148,6 +149,21 @@ PROV-002: "Tiny89 combines GPL-2.0 TiEmu and UAE code with MIT-derived TinyNES p
 Records are grouped in the order of the topic catalog, and numbered within each topic.
 
 ```yaml
+- record_id: KEY-001
+  kind: EXTERNAL
+  topic_id: KEY
+  title: "The Bluetooth keyboard's reports are HID Keyboard/Keypad page 0x07 usages"
+  status: SOURCED
+  verified_date: 2026-10-16
+  statement: "HID Usage Tables for USB, Version 1.4 (1996-2022 USB Implementers' Forum), section 10, defines the Keyboard/Keypad usage page 0x07 that a boot keyboard's report carries. The codes this project's mapping is written in are 0x04 to 0x1D for the letters a to z, 0x1E to 0x27 for the number row 1 to 0, 0x28 Return (ENTER), 0x29 ESCAPE, 0x2A DELETE (Backspace), 0x2B Tab, 0x2C Spacebar, 0x2D '- and (underscore)', 0x2E '= and +', 0x2F '[ and {', 0x30 '] and }', 0x33 '; and :', 0x34 the apostrophe and double-quote key, 0x36 ', and <', 0x37 '. and >', 0x38 '/ and ?', 0x39 Caps Lock, 0x3A to 0x45 F1 to F12, 0x49 Insert, 0x4A Home, 0x4B PageUp, 0x4C Delete Forward, 0x4D End, 0x4E PageDown, 0x4F RightArrow to 0x52 UpArrow, the keypad's 0x54 '/', 0x55 '*', 0x56 '-', 0x57 '+' and 0x58 ENTER, and 0x63 '.'. The modifier keys are usages 0xE0 LeftControl to 0xE7 Right GUI, whose low bits are the report's modifier byte: 0x02 for LeftShift and 0x20 for RightShift. Two of the names carry the shifted character their key produces -- 0x2E is '= and +' and 0x25 is '8 and *' -- which is what lets a shift layer be read off the standard rather than guessed."
+  consequence: "This is the standard the project's keyboard mapping is written against: firmware/common/t89_key.c holds these usage IDs in two tables, one plain and one for the keys Shift turns them into, and tests/test_t89_key.c repeats every binding with its name from this section, so a usage that is mistyped or moved fails the host test by name. The standard does not decide the mapping -- which calculator key a usage reaches is this project's choice, and both files say so. TinyTang sends F12 (0x45) only as its desktop/core screen toggle, so it never reaches a core."
+  sources:
+    - "HID Usage Tables for USB, Version 1.4, 1996-2022 USB Implementers' Forum, section 10 'Keyboard/Keypad Page (0x07)', https://usb.org/sites/default/files/hut1_4.pdf"
+    - "TinyTang ports/bl616/tang_key.c: the CSI sequences for usages 0x49 to 0x4E, Insert through PageDown"
+    - "TinyTang .ai/core-reference.md, TOOL-019: F1 to F11 are usages 0x3A to 0x44 and F12 (0x45) is reserved"
+    - "Tiny89 firmware/common/t89_key.c, firmware/common/t89_key.h and tests/test_t89_key.c"
+  verification: "The document was fetched from usb.org and section 10 read on 2026-10-16; every usage ID and name above was taken from it, and the codes already in use were checked against it, which confirmed the two horizontal arrows entry 7 corrected and found no other binding wrong. The letters, digits, arrows, editing keys and keypad have been used on the board through the Bluetooth keyboard; the codes added by the keyboard-mapping cycle (Caps Lock, Insert, Home, PageUp, Delete, End, PageDown and F6 to F11) were not yet confirmed on hardware when this record was written, which is why the status is SOURCED and not VERIFIED."
+
 - record_id: OS-001
   kind: EXTERNAL
   topic_id: OS

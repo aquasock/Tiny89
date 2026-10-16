@@ -15,10 +15,12 @@
  * releases are found by comparing with the last report, exactly as the pad
  * mapping did.
  *
- * Usages are HID keyboard page (0x07) codes, the ones a boot keyboard sends.
- * The mapping is this project's choice and lives in one table in t89_key.c; a
- * key it does not name reaches the calculator as nothing, and the modifiers
- * are unmapped for now.
+ * Usages are HID keyboard page (0x07) codes, the ones a boot keyboard sends,
+ * recorded in core-reference.md as KEY-001.  The mapping is this project's
+ * choice and lives in two tables in t89_key.c: one for the keys as they are,
+ * one for the keys Shift turns them into.  A key neither names reaches the
+ * calculator as nothing, and Shift with a key the second table does not name
+ * keeps that key's ordinary meaning.
  */
 #ifndef T89_KEY_H
 #define T89_KEY_H
@@ -39,6 +41,12 @@ void t89_kbd_decode(uint32_t lo, uint32_t hi, t89_kbd_t *out, uint8_t *seq);
 
 /* The TiKey a usage code means, or -1 for one this project does not name. */
 int t89_kbd_key(uint8_t usage);
+
+/* The same usage held with Shift, which is a bit in the report's modifier byte
+ * rather than a usage of its own: the calculator's plus, multiply, power and
+ * negate, and the calculator's own F1 to F8.  -1 for a usage Shift does not
+ * name, which callers read as "keep the unshifted meaning". */
+int t89_kbd_shift_key(uint8_t usage);
 
 /* The keyboard as the calculator sees it: the set of keys the report implies,
  * written to the emulator as the difference from the report the module last

@@ -85,6 +85,103 @@ int main(void)
     check(t89_kbd_key(0x00) == -1, "map: nothing is not a key");
     check(t89_kbd_key(0xF0) == -1, "map: an unnamed usage is nothing");
 
+    /* Every binding, with the usage's name from HID Usage Tables for USB 1.4
+     * section 10 (core-reference.md, KEY-001).  Carrying the name is the
+     * point: the two horizontal arrows were swapped for two cycles and the
+     * host test missed it because it checked up and down only.  A usage that
+     * is mistyped, dropped or moved now fails here by name. */
+    {
+        static const struct { uint8_t usage; const char *name; int key; }
+        binds[] = {
+            { 0x52, "UpArrow", TIKEY_UP },
+            { 0x51, "DownArrow", TIKEY_DOWN },
+            { 0x50, "LeftArrow", TIKEY_LEFT },
+            { 0x4F, "RightArrow", TIKEY_RIGHT },
+            { 0x28, "Return (ENTER)", TIKEY_ENTER1 },
+            { 0x29, "ESCAPE", TIKEY_ESCAPE },
+            { 0x2A, "DELETE (Backspace)", TIKEY_BACKSPACE },
+            { 0x2B, "Tab", TIKEY_2ND },
+            { 0x3A, "F1", TIKEY_DIAMOND },
+            { 0x3B, "F2", TIKEY_ALPHA },
+            { 0x3C, "F3", TIKEY_MODE },
+            { 0x3D, "F4", TIKEY_CATALOG },
+            { 0x1E, "1 and !", TIKEY_1 }, { 0x1F, "2 and @", TIKEY_2 },
+            { 0x20, "3 and #", TIKEY_3 }, { 0x21, "4 and $", TIKEY_4 },
+            { 0x22, "5 and %", TIKEY_5 }, { 0x23, "6 and ^", TIKEY_6 },
+            { 0x24, "7 and &", TIKEY_7 }, { 0x25, "8 and *", TIKEY_8 },
+            { 0x26, "9 and (", TIKEY_9 }, { 0x27, "0 and )", TIKEY_0 },
+            { 0x04, "a and A", TIKEY_A }, { 0x05, "b and B", TIKEY_B },
+            { 0x06, "c and C", TIKEY_C }, { 0x07, "d and D", TIKEY_D },
+            { 0x08, "e and E", TIKEY_E }, { 0x09, "f and F", TIKEY_F },
+            { 0x0A, "g and G", TIKEY_G }, { 0x0B, "h and H", TIKEY_H },
+            { 0x0C, "i and I", TIKEY_I }, { 0x0D, "j and J", TIKEY_J },
+            { 0x0E, "k and K", TIKEY_K }, { 0x0F, "l and L", TIKEY_L },
+            { 0x10, "m and M", TIKEY_M }, { 0x11, "n and N", TIKEY_N },
+            { 0x12, "o and O", TIKEY_O }, { 0x13, "p and P", TIKEY_P },
+            { 0x14, "q and Q", TIKEY_Q }, { 0x15, "r and R", TIKEY_R },
+            { 0x16, "s and S", TIKEY_S }, { 0x17, "t and T", TIKEY_T },
+            { 0x18, "u and U", TIKEY_U }, { 0x19, "v and V", TIKEY_V },
+            { 0x1A, "w and W", TIKEY_W }, { 0x1B, "x and X", TIKEY_X },
+            { 0x1C, "y and Y", TIKEY_Y }, { 0x1D, "z and Z", TIKEY_Z },
+            { 0x2D, "- and _", TIKEY_MINUS },
+            { 0x2E, "= and +", TIKEY_EQUALS },
+            { 0x2F, "[ and {", TIKEY_PALEFT },
+            { 0x30, "] and }", TIKEY_PARIGHT },
+            { 0x33, "; and :", TIKEY_COMMA },
+            { 0x34, "' and \"", TIKEY_PIPE },
+            { 0x36, ", and <", TIKEY_COMMA },
+            { 0x37, ". and >", TIKEY_PERIOD },
+            { 0x38, "/ and ?", TIKEY_DIVIDE },
+            { 0x54, "Keypad /", TIKEY_DIVIDE },
+            { 0x55, "Keypad *", TIKEY_MULTIPLY },
+            { 0x56, "Keypad -", TIKEY_MINUS },
+            { 0x57, "Keypad +", TIKEY_PLUS },
+            { 0x58, "Keypad ENTER", TIKEY_ENTER2 },
+            { 0x63, "Keypad .", TIKEY_PERIOD },
+            { 0x2C, "Spacebar", TIKEY_SPACE },
+            { 0x39, "Caps Lock", TIKEY_HAND },
+            { 0x49, "Insert", TIKEY_APPS },
+            { 0x4A, "Home", TIKEY_HOME },
+            { 0x4B, "PageUp", TIKEY_STORE },
+            { 0x4C, "Delete Forward", TIKEY_CLEAR },
+            { 0x4D, "End", TIKEY_ON },
+            { 0x4E, "PageDown", TIKEY_EE },
+            { 0x3F, "F6", TIKEY_SIN },
+            { 0x40, "F7", TIKEY_COS },
+            { 0x41, "F8", TIKEY_TAN },
+            { 0x42, "F9", TIKEY_LN },
+            { 0x43, "F10", TIKEY_NU },
+            { 0x44, "F11", TIKEY_THETA }
+        };
+        static const struct { uint8_t usage; const char *name; int key; }
+        shifted[] = {
+            { 0x2E, "= and +", TIKEY_PLUS },
+            { 0x25, "8 and *", TIKEY_MULTIPLY },
+            { 0x23, "6 and ^", TIKEY_POWER },
+            { 0x2D, "- and _", TIKEY_NEGATE },
+            { 0x3A, "F1", TIKEY_F1 }, { 0x3B, "F2", TIKEY_F2 },
+            { 0x3C, "F3", TIKEY_F3 }, { 0x3D, "F4", TIKEY_F4 },
+            { 0x3E, "F5", TIKEY_F5 }, { 0x3F, "F6", TIKEY_F6 },
+            { 0x40, "F7", TIKEY_F7 }, { 0x41, "F8", TIKEY_F8 }
+        };
+        char name[64];
+        size_t i;
+
+        for (i = 0; i < sizeof binds / sizeof binds[0]; i++) {
+            snprintf(name, sizeof name, "map: 0x%02x is %s",
+                     binds[i].usage, binds[i].name);
+            check(t89_kbd_key(binds[i].usage) == binds[i].key, name);
+        }
+        for (i = 0; i < sizeof shifted / sizeof shifted[0]; i++) {
+            snprintf(name, sizeof name, "shift map: 0x%02x is %s held",
+                     shifted[i].usage, shifted[i].name);
+            check(t89_kbd_shift_key(shifted[i].usage) == shifted[i].key, name);
+        }
+    }
+    check(t89_kbd_shift_key(0x00) == -1, "shift map: nothing is not a key");
+    check(t89_kbd_shift_key(0x52) == -1,
+          "shift map: a key Shift does not name has no shifted meaning");
+
     /* A report is state: holding a key is one press, and letting go is one
      * release. */
     t89_kbd_reset();
@@ -100,6 +197,29 @@ int main(void)
     check(has_key(TIKEY_UP, 0) && has_key(TIKEY_ENTER1, 0),
           "state: both releases are reported");
     check(upd(&k) == 0, "state: an unchanged empty report is silent");
+
+    /* Shift picks between the two tables in implied(), and a usage the shift
+     * table does not name keeps the meaning it has unshifted. */
+    t89_kbd_reset();
+    k = mk(0x2E, 0x00);                 /* the equals key */
+    k.mods = 0x02;                      /* LeftShift */
+    check(upd(&k) == 1, "shift: Shift with equals is one press");
+    check(has_key(TIKEY_PLUS, 1), "shift: the calculator sees plus");
+    check(!has_key(TIKEY_EQUALS, 1), "shift: and not equals as well");
+    k.mods = 0x20;                      /* RightShift */
+    check(upd(&k) == 0, "shift: either Shift bit presses the same key");
+    k.mods = 0x00;
+    check(upd(&k) == 2, "shift: letting Shift go is a release and a press");
+    check(has_key(TIKEY_PLUS, 0) && has_key(TIKEY_EQUALS, 1),
+          "shift: plus released and equals pressed");
+
+    t89_kbd_reset();
+    k = mk(0x52, 0x3F);                 /* Up and F6 */
+    k.mods = 0x02;
+    check(upd(&k) == 2, "shift: a shifted report is two presses");
+    check(has_key(TIKEY_F6, 1), "shift: F6 held is the calculator's F6");
+    check(!has_key(TIKEY_SIN, 1), "shift: and not sin");
+    check(has_key(TIKEY_UP, 1), "shift: a key outside the shift table is itself");
 
     /* An unnamed key presses nothing, and the six slots are all read. */
     t89_kbd_reset();
