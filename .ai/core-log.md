@@ -530,3 +530,34 @@ Persist the flash, which is `tihw.rom` at 4 MiB and entry 13's subject. The shap
 - User Test: PASS
 
 ---
+
+## 15 COMMIT Unreleased 2026-10-16T12:28:58-07:00
+
+#### Coming From:
+
+Unreleased c57bc00
+
+#### Purpose:
+
+Measure whether a save's payload crosses the link as the bytes themselves rather than hex lines, which is the shape a 4 MiB flash needs and the measurement both logs named as next.
+
+#### Outcome:
+
+The byte payload crosses, and it cannot be trusted, and both halves of that were measured on the board. `save_ram()` gained the shape TinyTang's save direction already carried (its entry 84): `TinyNES NVRAM DATA <length> <crc>` followed by exactly that many raw bytes, sent one byte at a time rather than through stdio, because `_write()` turns each newline into a carriage return and a newline and would insert a byte into a payload of raw memory and change its length. The bytes go out a frame's worth at a time, 128, behind the same eight-millisecond pause the hex shape uses, which makes it four times the rate: `TinyNES NVRAM DATA 262144 08e07d3c`, then `ae350run: saved 262144 bytes` and `Tiny89 RAM SENT 262144 08e07d3c 16558 ms`, against hex's `65832 ms` for the same 256 KiB. The second run of it failed, and that failure is the result worth having: `TinyNES NVRAM DATA 262144 8dfc36d9` and then `ae350run: the save did not arrive whole: 262144 of 262144 bytes, 0 dropped in the link ring, close 0`. Every byte arrived, nothing was dropped, and the CRC disagreed -- the signature entry 12 recorded and left unexplained -- and it is now clear why. A payload with no line boundaries has nothing to re-align on, so one frame lost early shifts every byte after it: the reader still counts the length it was promised and hashes the wrong data, so the count cannot see the damage and only the CRC can. It also says which of entry 12's failures those were, because `t89_save.h` records that all three carried no file while reporting the whole 262144 bytes, and they were binary saves. Hex survives the same loss because a lost line costs 32 bytes and the next boundary restores the alignment, and that is why hex stays the default: the byte shape is faster and is not sound until the loss is found. What the two byte runs differed in is worth naming without concluding from, since it is one run each: the successful one was taken while the calculator was parked in its power-down state, and the failed one while it was awake and the user was typing, so whether the lost frame follows the calculator running, or the desk layer carrying its own traffic at the same time, is a lead for the next cycle rather than a finding. Separately, this cycle found the calculator's own ON key, which is a usability hole rather than a transport fault: a TI-89 powers itself down after a few minutes without a keypress, on the clock the app runs at wall speed, and its powered-down state is indistinguishable from a dead keyboard -- `PC=00005c0a` and `LCD=13e3ddab` frozen across several heartbeats while keyboard frames kept arriving, `KBDS` climbing from 0 to 141 with `KEYS=0`. The user confirmed that End wakes it and the arrows work again, which `t89_key.c` already bound to `TIKEY_ON` as HID usage 0x4D, and that the table's own comment anticipated: "End ends the operation". Entry 14 attributed the visible dead keyboard entirely to TinyTang's desk layer; its `KBDS=0` measurement still justifies that fix, because no frames were being sent at all, but the two symptoms sat on top of each other and only one was written down. The tree keeps the byte shape behind `make BINARY=1` and leaves hex the default, because a measurement that cannot be repeated is not evidence: the default build is byte-identical to entry 14's deployed artifact at SHA-256 `5a3269f591990390a4458a3c552475df73db9f7cc60cab2d3999b566cfd88e03`, and the `BINARY=1` build is byte-identical to the artifact this cycle deployed at `cd568a5db87bfc866cbc2edfe3ce13082d23b4c030f204a90caf36ab3b096ca9`, so the restructuring changed no behaviour on either path and both of this cycle's runs are reproducible by a deterministic build. `t89_save` passes 21 checks and `t89_key` 146; the default build reports `text 437650` and the byte build `437520`; the board's firmware is unchanged at `162ff40-dirty.627b0e9`, and the board now holds the `BINARY=1` artifact at `/root/ae350/tiemu_smoke.elf`. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and that no settled entry was rewritten, and validated this entry's sequential number, six sections, prose, Status values and the log's fifteen-entry count against the template.
+
+#### Next Steps:
+
+Find the lost frame, which is now the whole of the byte payload's problem and the reason it is not the default: it is 16.6 s for 256 KiB against hex's 65.8 s, and a save that is fast and sometimes silently wrong is worse than one that is slow and right. `BINARY=1` reproduces the measurement, and the lead is the difference between the two runs -- the calculator parked against the calculator awake, with the desk layer carrying keyboard traffic in the second. Two decisions belong to the next cycle and neither is mine to take. The first is what a failed save should cost: the board deletes the file whenever a save does not arrive whole, which is right for the file that would be loaded next time and means a failed attempt destroys the last good save, and the user asked whether the save should be made recoverable before the loss is chased. The second is the flash itself, `tihw.rom` at 4 MiB and entry 13's subject, which is nine minutes as hex and about 4.4 minutes as bytes if the loss is fixed; the byte payload exists for it and should not be used for it until then. Entry 14's own claim wants a test too: the empty lines that warm the payload's opening were added in the same breath as the pace, and the byte payload has since arrived whole with no warm-up possible, so whether the warm-up is worth anything is unmeasured and the next cycle that touches this shape can settle it cheaply. Entry 11's open items stand, as do entry 83's in TinyTang and the repository's own build-identity item.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/main.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

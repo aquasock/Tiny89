@@ -237,6 +237,35 @@ static void save_ram(void)
         save_pace();
     }
 
+#ifdef T89_SAVE_BINARY
+    /* The payload as the bytes themselves, which is TinyTang's `TinyNES NVRAM
+     * DATA` shape and the only one that makes a 4 MiB flash practical: a frame
+     * carries 128 bytes, so a pause a frame crosses 256 KiB in 16.6 s against
+     * hex's 65.8 s.  Measured on this board, and the measurement is the reason
+     * this is not the default -- one of two runs came back with every byte
+     * present, nothing dropped, and a CRC that disagreed, because a payload
+     * with no line boundaries to re-align on cannot survive a frame going
+     * missing; the count still reads complete and the content is shifted.
+     * Built with `make BINARY=1`; core-log entry 15 has the numbers. */
+    const size_t frame = 128u;
+
+    printf("TinyNES NVRAM DATA %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
+    save_pace();
+
+    /* No warm-up of its own, and not through stdio.  After the header every
+     * byte is payload, so an empty line would shift the lot; and `_write()`
+     * turns each newline into a carriage return and a newline, which in a
+     * payload of raw memory would insert a byte and change the length.  The
+     * BEGIN lines above are the whole warm-up this shape gets. */
+    for (offset = 0; offset < bytes; offset++) {
+        t89_put_char((char)tihw.ram[offset]);
+        if ((offset + 1u) % frame == 0u) {
+            save_pace();
+        }
+    }
+    t89_wait_tx_idle();
+    save_pace();
+#else
     printf("TinyNES NVRAM SAVE %lu %08" PRIx32 "%s\n", (unsigned long)bytes,
            crc, t89_save_is_blank(tihw.ram, bytes) ? " BLANK" : "");
     save_pace();
@@ -248,22 +277,26 @@ static void save_ram(void)
      * short, with nothing dropped in the board's link ring, so the loss is a
      * frame that neither end reports.  An empty line decodes to nothing
      * (t89_save_hex writes no bytes for it), so a few of them cost the card
-     * nothing and spend the loss on air instead of on the calculator's RAM. */
+     * nothing and spend the loss on air instead of on the calculator's RAM.
+     *
+     * What these lines are worth is not settled: the byte payload has since
+     * arrived whole with no warm-up possible, so the pace raised in the same
+     * breath may be the whole of entry 14's fix (core-log entry 15). */
     for (lead = 0; lead < 4; lead++) {
         printf("\n");
         save_pace();
     }
 
-    /* The payload as hex lines: TinyNES's own shape for a save, and the only
-     * one that has produced a valid file in the user's configuration -- a
-     * binary payload arrived complete and hashed differently, three times.
-     * The empty lines above are what closed that; t89_save.h carries the
-     * measurement and entry 14 records it. */
+    /* The payload as hex lines, which is the shape that has produced a valid
+     * file in the user's configuration.  It is 65.8 s for 256 KiB rather than
+     * 16.6 s, and it is the default because a lost line costs 32 bytes and the
+     * rest re-aligns, where the byte payload above is shifted by one. */
     for (offset = 0; offset < bytes; offset += T89_SAVE_LINE_BYTES) {
         t89_save_hex(line, tihw.ram + offset, T89_SAVE_LINE_BYTES);
         printf("%s\n", line);
         save_pace();
     }
+#endif
 
     printf("TinyNES NVRAM DONE %08" PRIx32 "\n", crc);
     t89_wait_tx_idle();

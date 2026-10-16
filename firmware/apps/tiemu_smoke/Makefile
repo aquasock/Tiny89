@@ -5,14 +5,26 @@
 #   make           the program, build/firmware/apps/tiemu_smoke/
 #   make DIAG=1    it with the per-second heartbeat instead of one a minute,
 #                  build/firmware/apps/tiemu_smoke_diag/
+#   make BINARY=1  it with the save's payload sent as the bytes themselves
+#                  instead of hex lines -- four times faster, and only sound
+#                  while nothing is lost on the link; see main.c's save_ram()
 #
 # The default build reports once a minute, the way TinyNES's board build does
 # (main.c: HEARTBEAT_FRAMES).  DIAG=1 is TinyNES's flag for a build that says
 # more, and here it changes that one interval and nothing else.
+#
+# BINARY=1 exists because the byte payload is measured rather than trusted.  It
+# is 16.6 s against 65.8 s for the same 256 KiB on this board, and one of two
+# runs of it came back with every byte present and the CRC disagreeing -- which
+# is what a lost frame does to a payload with no line boundaries to re-align on
+# (main.c's save_ram(), core-log entry 15).  The default is hex until that loss
+# is found, and this flag is how the measurement is repeated.
 
 ROOT       := $(abspath ../../..)
 ifeq ($(DIAG),1)
 BUILD      ?= $(ROOT)/build/firmware/apps/tiemu_smoke_diag
+else ifeq ($(BINARY),1)
+BUILD      ?= $(ROOT)/build/firmware/apps/tiemu_smoke_binary
 else
 BUILD      ?= $(ROOT)/build/firmware/apps/tiemu_smoke
 endif
@@ -35,6 +47,7 @@ CPPFLAGS   := -DNO_GDB -DNO_SOUND -D__inline__=inline -DSTATFS_NO_ARGS=2 \
               -I$(TIEMU_SRC)/core/ti_hw -I$(TIEMU_SRC)/core/ti_sw \
               -I$(TIEMU_SRC)/core/dbg -I$(TIEMU_SRC)/misc
 APP_DEFS   := $(if $(filter 1,$(DIAG)),-DT89_DIAG)
+APP_DEFS   += $(if $(filter 1,$(BINARY)),-DT89_SAVE_BINARY)
 CPPFLAGS   += $(APP_DEFS)
 CFLAGS     := $(COMMON) -std=gnu11
 ASFLAGS    := $(ARCH) -g
