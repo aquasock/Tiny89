@@ -469,3 +469,33 @@ Find out what the calculator does to the RAM before designing the flash half. A 
 - User Test: FAIL
 
 ---
+
+## 13 COMMIT Unreleased 2026-10-16T08:08:12-07:00
+
+#### Coming From:
+
+Unreleased 9478a08
+
+#### Purpose:
+
+Find out what the calculator's own boot does to the RAM and the flash, because a restored RAM did not resume a session.
+
+#### Outcome:
+
+The answer is the flash, and it was measured rather than inferred. `firmware/apps/tiemu_smoke/main.c` gained a `diag_line()` that prints a CRC-32 of `tihw.ram` and of `tihw.rom`, called once as soon as the save has been loaded and before the CPU first runs, again at `Tiny89 READY`, and on every heartbeat -- all of it under entry 10's `T89_DIAG`, so the default image is untouched, which the build proves: the default is `text 437554` with no `Tiny89 DIAG` string in it and a stripped SHA-256 identical to entry 12's artifact, while the DIAG image is `437720` with the string present. This is also the first time the `DIAG=1` image has run on the board, which entry 10 left open. The readings, on a board running the diagnostic build with entry 12's save still on the card: `BEFORE RAM=9ca4fec2 FLASH=d9109983` -- the restored RAM hashed exactly as the save and its load both did, a third independent confirmation of that transport, and the flash was the converted image as built. Then `READY RAM=0f5d7faa FLASH=d2d6a57b`, both already different within 300 presented frames, about five seconds of the calculator's own time. The flash then moved three more times, `d27ea422`, `0d5fe1d9`, `06d1985b`, and settled at `d1fcdbf9` by the fourth heartbeat, holding that value for the remaining fifty-eight readings of the run. What that establishes is that the OS writes the flash on every boot and finishes doing so within a few seconds: the calculator's file system is re-made each time because the flash it is handed is always the converter's untouched image, which `core/ti_hw/mem.c` copies in at every start, and that is why the user saw the first-boot installation and not the session. What it does not establish is whether the OS would also re-initialise a valid RAM, and the readings cannot say: a running OS writes its RAM continuously, so a changed RAM CRC is expected whether it kept what we restored or replaced it, and the RAM CRC did change on every reading. Settling that needs a flash the OS accepts, which is the next cycle's subject; the honest reading of this run is that the flash is the blocker and the RAM question is still open. One thing is worth recording as a consequence rather than a fault: because the OS's flash writes settle within a few seconds of the boot and then stop, the flash is stable by the time a session is running, so a save taken when the user asks is a save of settled state. The card was left holding the diagnostic image rather than the quiet one, because the run this cycle measured was still holding the console when the attempt was made to put it back -- the same held-console state entry 12 hit, and no failure of anything. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged, validated this sequential entry's six sections, prose, Status values and the log's thirteen-entry count, and confirmed that no settled entry was rewritten.
+
+#### Next Steps:
+
+Persist the flash. It is `tihw.rom`, 4 MiB, and the shape of the work is now known: the app must write it before the OS's boot code first runs, which is where `core/ti_hw/mem.c` puts the converted image today, and read it back the same way the RAM is read back, with the converted image remaining the fallback for a first boot. The cost is the open problem: 4 MiB as hex at the four-milliseconds-a-line pacing the RAM save uses is about eight minutes, which is not a thing to ask of a user, so either TinyTang's save direction gains a way to carry bytes the way its load direction already does, or the flash is compared against the image it booted from -- a 4 MiB CRC the app can compute -- and sent only when it differs, which for an install-once calculator would be rare and, when it happened, still eight minutes. The RAM question from this cycle comes after that: with a flash the OS accepts, whether it keeps a restored RAM becomes measurable, and only then is it worth deciding anything about the RAM path. The converter's own limits are worth revisiting in the same cycle, since the image it builds is now a fallback rather than the only thing the calculator ever sees. Entry 12's transport stays as it is and is the machinery the flash needs. Entry 11's open items stand: KEY-001 is SOURCED until the codes that cycle added are confirmed on hardware, the two bindings no PC key justifies are the user's to move or keep, and the BL616 heap still refuses a 16384-byte script worker stack while the calculator runs. Entry 4's two items also stand, the video unit's FRAMES testbench disagreement and the four-level grayscale path still reporting LCDMODE=1bit.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/main.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: N/A
+
+---

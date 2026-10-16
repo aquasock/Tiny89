@@ -251,6 +251,31 @@ static void save_ram(void)
     printf("Tiny89 RAM SAVED %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
 }
 
+#ifdef T89_DIAG
+/*
+ * What the two memory images do across the OS's boot, which is the question a
+ * restored RAM left open: the calculator ran its first-boot installation
+ * instead of resuming a session, and either the OS re-initialises the RAM
+ * whatever we restore, or it keeps the RAM and the flash is the missing half --
+ * this emulator rebuilds the flash from the converted image at every start
+ * (core/ti_hw/mem.c copies img->data into tihw.rom), so the calculator is
+ * handed a virgin flash every time.
+ *
+ * A pair of CRC-32s at both ends of the boot tells the two apart: a RAM CRC
+ * that changes means the OS writes over what we restored, and a RAM CRC that
+ * holds while the flash CRC moves means the flash is the whole story.  Printed
+ * once before the CPU first runs and then at READY and on every heartbeat, so
+ * the readings also say when it happened.  DIAG=1 only: the default image says
+ * nothing, which is entry 10's rule.
+ */
+static void diag_line(const char *when)
+{
+    printf("Tiny89 DIAG %s RAM=%08" PRIx32 " FLASH=%08" PRIx32 "\n", when,
+           t89_save_crc32(0, tihw.ram, (size_t)tihw.ram_size),
+           t89_save_crc32(0, tihw.rom, (size_t)tihw.rom_size));
+}
+#endif
+
 int main(void)
 {
     uint8_t *flash;
@@ -368,6 +393,11 @@ int main(void)
             printf("Tiny89 RAM none yet\n");
         }
     }
+#ifdef T89_DIAG
+    /* The reading before the calculator's own code has run at all: whatever
+     * the save put there, and the flash as the converter built it. */
+    diag_line("BEFORE");
+#endif
 
     /*
      * Seed TiEmu's gray-plane model exactly as the TiEmu GTK frontend did
@@ -497,6 +527,9 @@ int main(void)
                 ready_printed = 1;
                 printf("Tiny89 READY PC=%08" PRIx32 " LCD=%08" PRIx32 "\n",
                     (uint32_t)m68k_getpc(), hash);
+#ifdef T89_DIAG
+                diag_line("READY");
+#endif
             }
 
             /* (e) The heartbeat, at HEARTBEAT_FRAMES: one line a minute by
@@ -511,6 +544,9 @@ int main(void)
                     keys_down(), video);
                 if (gray) printf(" LCDMODE=%s", t89_lcd_mode());
                 printf("\n");
+#ifdef T89_DIAG
+                diag_line("FRAME");
+#endif
             }
         }
     }
