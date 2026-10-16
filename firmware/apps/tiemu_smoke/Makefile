@@ -67,12 +67,13 @@ CORE_SOURCES := \
 RT_SOURCES := $(ROOT)/firmware/rt/crt0.S $(ROOT)/firmware/rt/syscalls.c \
               $(ROOT)/firmware/common/uart.c
 T89_KEY_SOURCE := $(ROOT)/firmware/common/t89_key.c
+T89_SAVE_SOURCE := $(ROOT)/firmware/common/t89_save.c
 T89_LCD_SOURCES := $(ROOT)/firmware/common/t89_lcd.c \
                    $(ROOT)/firmware/common/t89_lcd_gray.c
 APP_SOURCES := main.c $(ROOT)/firmware/boot/load.c \
                $(ROOT)/firmware/boot/support/uart.c \
                $(ROOT)/firmware/common/t89_bios.c \
-               $(T89_KEY_SOURCE) $(T89_LCD_SOURCES)
+               $(T89_KEY_SOURCE) $(T89_SAVE_SOURCE) $(T89_LCD_SOURCES)
 
 core_object = $(BUILD)/obj/core/$(notdir $(1)).o
 rt_object   = $(BUILD)/obj/rt/$(notdir $(1)).o
@@ -110,6 +111,7 @@ $(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/boot/support/uart.c),
 $(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/common/t89_bios.c),$(ROOT)/firmware/common/t89_bios.c))
 $(eval $(call compile_c,$(call app_object,$(T89_KEY_SOURCE)),$(T89_KEY_SOURCE)))
 $(foreach source,$(T89_LCD_SOURCES),$(eval $(call compile_c,$(call app_object,$(source)),$(source))))
+$(eval $(call compile_c,$(call app_object,$(T89_SAVE_SOURCE)),$(T89_SAVE_SOURCE)))
 
 # DIAG changes a define and nothing else, so main.c's object would otherwise
 # survive a change to it: the options are kept in a file that is rewritten

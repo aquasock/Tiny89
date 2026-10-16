@@ -27,6 +27,7 @@
 #include "t89_bios.h"
 #include "t89_lcd.h"
 #include "t89_key.h"
+#include "t89_save.h"
 #include "tiny89_platform.h"
 #include "ti68k_def.h"
 
@@ -153,17 +154,23 @@ static int keys_down(void)
     return n;
 }
 
-static int poll_keyboard(uint8_t *last_sequence, t89_key_event_t *events)
+static int poll_keyboard(uint8_t *last_sequence, t89_key_event_t *events,
+                         int *command)
 {
     uint32_t hi = T89_KBD_HI;
     uint8_t sequence = (uint8_t)(hi >> 24);
     t89_kbd_t kbd;
     int count, i;
 
+    if (command) *command = T89_KBD_CMD_NONE;
     if (sequence == *last_sequence) return 0;
     *last_sequence = sequence;
 
     t89_kbd_decode(T89_KBD_LO, hi, &kbd, 0);
+    /* A report is state, so a command arrives once, with the report that
+     * carries it; holding the chord does not repeat it. */
+    if (command) *command = t89_kbd_command(&kbd);
+
     count = t89_kbd_update(&kbd, events, MAX_KEY_EVENTS);
     if (count < 0) return count;
 
@@ -172,6 +179,76 @@ static int poll_keyboard(uint8_t *last_sequence, t89_key_event_t *events)
         ti68k_kbd_set_key(events[i].key, events[i].active);
     }
     return count;
+}
+
+/*
+ * The board files a save a line at a time, and a line sent before it has
+ * finished with the last one is a line that goes missing -- which is why
+ * TinyNES's save pauses between lines too.  Waiting for the link to be idle is
+ * not enough on its own: that says this end has sent everything, not that the
+ * board has filed it, so the pause is what the board is given.  Four
+ * milliseconds a line is TinyNES's own figure, measured on this board; the
+ * calculator's RAM is 8192 lines, so a save takes about 35 seconds, which is
+ * why it is a key the user presses rather than something automatic.
+ */
+static void save_pace(void)
+{
+    const uint64_t until = t89_cycles64() + T89_CORE_HZ / 250u; /* 4 ms */
+
+    /* The line has to be out before the pause means anything: a line still in
+     * the C library's buffer would pace nothing at all. */
+    fflush(stdout);
+    t89_wait_tx_idle();
+    while (t89_cycles64() < until) {
+    }
+}
+
+/*
+ * Hand the calculator's RAM to the board, which writes it beside the other
+ * saves on the card.  This is TinyNES's NVRAM protocol: a line naming the
+ * length and the CRC-32, the bytes as hex lines, and the CRC again at the end.
+ * ae350run decodes the hex into a binary .sav and throws the file away if the
+ * length or the CRC disagree, so a save lost in the link is discarded instead
+ * of being loaded as a broken calculator next time.
+ *
+ * When this runs the emulator is not: the picture freezes for the length of
+ * the save, which is the price of getting the state onto the card.
+ */
+static void save_ram(void)
+{
+    char line[T89_SAVE_LINE_CHARS + 1];
+    const size_t bytes = (size_t)tihw.ram_size;
+    uint32_t crc;
+    size_t offset;
+    int lead;
+
+    /* The CPU wrote this RAM through the D-cache, so it is written back
+     * before it is read (tinynes.h; TinyNES does the same before a save). */
+    t89_dcache_wbinval();
+    crc = t89_save_crc32(0, tihw.ram, bytes);
+
+    /* The header is not the first thing sent: a burst's opening is where the
+     * link loses a chunk, and on 2026-10-14 TinyNES's own header arrived as
+     * "TinyNES N", which armed no save at all.  Warm the link first. */
+    for (lead = 0; lead < 3; lead++) {
+        printf("TinyNES NVRAM BEGIN\n");
+        save_pace();
+    }
+
+    printf("TinyNES NVRAM SAVE %lu %08" PRIx32 "%s\n", (unsigned long)bytes,
+           crc, t89_save_is_blank(tihw.ram, bytes) ? " BLANK" : "");
+    save_pace();
+
+    for (offset = 0; offset < bytes; offset += T89_SAVE_LINE_BYTES) {
+        t89_save_hex(line, tihw.ram + offset, T89_SAVE_LINE_BYTES);
+        printf("%s\n", line);
+        save_pace();
+    }
+
+    printf("TinyNES NVRAM DONE %08" PRIx32 "\n", crc);
+    t89_wait_tx_idle();
+    save_pace();
+    printf("Tiny89 RAM SAVED %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
 }
 
 int main(void)
@@ -184,7 +261,7 @@ int main(void)
     uint32_t presented = 0, stable = 0;
     uint8_t last_sequence = 0;
     unsigned buffer = 0;
-    int gray, ready_printed = 0;
+    int gray, ready_printed = 0, command;
 
     printf("Tiny89 AE350 TiEmu smoke start\n");
 
@@ -259,6 +336,38 @@ int main(void)
     }
     printf("Tiny89 BOOT SSP=%08" PRIx32 " PC=%08" PRIx32 "\n",
         tihw.initial_ssp, tihw.initial_pc);
+
+    /*
+     * The calculator's RAM, if a previous session left one on the card.  The
+     * board serves a save headerless straight into the buffer named here and
+     * the loader's own block checksums judge it, so the file lands in tihw.ram
+     * the way a battery-backed calculator's RAM is found at power-up.  A first
+     * boot has no file, ae350run says so, and the zeroed RAM TiEmu allocated
+     * is what the OS then cold-starts on.
+     *
+     * The request goes out now, while the UART is still in loader mode: once
+     * TinyNES LINK is printed the line carries text frames and cannot ask for
+     * a file any more.
+     */
+    printf("TinyNES NVRAM WANT %08" PRIx32 " %08" PRIx32 "\n",
+           (uint32_t)(uintptr_t)tihw.ram, (uint32_t)tihw.ram_size);
+    fflush(stdout);
+    tn_load_reset();
+    {
+        uint32_t got = 0;
+        int tenth;
+
+        for (tenth = 0; tenth < 10 && got == 0; tenth++) {
+            got = tn_load_poll(TN_CORE_HZ / 10);
+        }
+        if (got == (uint32_t)(uintptr_t)tihw.ram) {
+            printf("Tiny89 RAM GOT %lu %08" PRIx32 "\n",
+                   (unsigned long)tihw.ram_size,
+                   t89_save_crc32(0, tihw.ram, (size_t)tihw.ram_size));
+        } else {
+            printf("Tiny89 RAM none yet\n");
+        }
+    }
 
     /*
      * Seed TiEmu's gray-plane model exactly as the TiEmu GTK frontend did
@@ -347,10 +456,17 @@ int main(void)
         }
 
         /* (b) Take keyboard input. */
-        count = poll_keyboard(&last_sequence, events);
+        count = poll_keyboard(&last_sequence, events, &command);
         if (count < 0) {
             printf("BAD Tiny89 keyboard result=%d\n", count);
             return 1;
+        }
+
+        /* (b2) Control with s: the program's own key, not the calculator's
+         * (t89_key.c maps nothing from a report that carries Control).  The
+         * emulator stops for the length of the save. */
+        if (command == T89_KBD_CMD_SAVE) {
+            save_ram();
         }
 
         /* (c) Present at the fabric's vertical blank: refresh the buffer that

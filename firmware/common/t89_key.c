@@ -97,6 +97,13 @@ static const t89_bind_t t89_shift_binds[] = {
  * and 0xE5 RightShift, whose low bits are 0x02 and 0x20. */
 #define T89_MOD_SHIFT 0x22u
 
+/* The control bits of the same byte: usages 0xE0 LeftControl and 0xE4
+ * RightControl, whose low bits are 0x01 and 0x10. */
+#define T89_MOD_CTRL 0x11u
+
+/* The usage that means save while Control is held: the s key, 0x16. */
+#define T89_CMD_SAVE_USAGE 0x16u
+
 /* The keys the module last applied, so a report is a difference and a held
  * key is one press. */
 static unsigned char t89_applied[NB_MAX_KEYS];
@@ -121,6 +128,17 @@ int t89_kbd_shift_key(uint8_t usage)
         if (t89_shift_binds[i].usage == usage) return t89_shift_binds[i].key;
     }
     return -1;
+}
+
+int t89_kbd_command(const t89_kbd_t *kbd)
+{
+    int i;
+
+    if (!kbd || !(kbd->mods & T89_MOD_CTRL)) return T89_KBD_CMD_NONE;
+    for (i = 0; i < T89_KBD_KEYS; i++) {
+        if (kbd->keys[i] == T89_CMD_SAVE_USAGE) return T89_KBD_CMD_SAVE;
+    }
+    return T89_KBD_CMD_NONE;
 }
 
 void t89_kbd_decode(uint32_t lo, uint32_t hi, t89_kbd_t *out, uint8_t *seq)
@@ -152,6 +170,12 @@ static void implied(const t89_kbd_t *kbd, unsigned char *set)
     int i;
 
     for (i = 0; i < NB_MAX_KEYS; i++) set[i] = 0;
+
+    /* Control takes the report away from the calculator: with it held the
+     * usages are the program's commands (t89_kbd_command) and nothing is
+     * mapped, so a chord cannot also type on the calculator. */
+    if (kbd->mods & T89_MOD_CTRL) return;
+
     for (i = 0; i < T89_KBD_KEYS; i++) {
         int key = shift ? t89_kbd_shift_key(kbd->keys[i]) : -1;
 

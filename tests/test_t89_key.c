@@ -221,6 +221,43 @@ int main(void)
     check(!has_key(TIKEY_SIN, 1), "shift: and not sin");
     check(has_key(TIKEY_UP, 1), "shift: a key outside the shift table is itself");
 
+    /* Control is the program's, not the calculator's: held with a usage it
+     * names a command, and nothing is mapped from such a report. */
+    {
+        t89_kbd_t c;
+
+        memset(&c, 0, sizeof c);
+        c.mods = 0x01; c.keys[0] = 0x16;          /* LeftControl, the s key */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_SAVE,
+              "cmd: Control with s is save");
+        c.mods = 0x10;                            /* RightControl */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_SAVE,
+              "cmd: either Control bit does it");
+        c.mods = 0x00;
+        check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
+              "cmd: s on its own is not a command");
+        c.mods = 0x01; c.keys[0] = 0x04;          /* Control with a */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
+              "cmd: another key is not save");
+        c.mods = 0x02; c.keys[0] = 0x16;          /* Shift with s */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
+              "cmd: Shift with s is not a command");
+        check(t89_kbd_command(NULL) == T89_KBD_CMD_NONE,
+              "cmd: no report, no command");
+    }
+
+    t89_kbd_reset();
+    k = mk(0x16, 0x00);                 /* the s key */
+    k.mods = 0x01;                      /* held with Control */
+    check(upd(&k) == 0, "cmd: Control with s presses nothing on the calculator");
+    k.mods = 0x00;
+    check(upd(&k) == 1, "cmd: letting Control go presses s");
+    check(has_key(TIKEY_S, 1), "cmd: and the key is s");
+    check(upd(&k) == 0, "cmd: and holding it emits nothing more");
+    k = mk(0x00, 0x00);
+    check(upd(&k) == 1, "cmd: releasing it is the one release");
+    check(has_key(TIKEY_S, 0), "cmd: and it is the s key that went up");
+
     /* An unnamed key presses nothing, and the six slots are all read. */
     t89_kbd_reset();
     k = mk(0x52, 0x00);

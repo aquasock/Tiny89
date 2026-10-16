@@ -431,3 +431,41 @@ The next cycle the user named is persistent calculator state, which entries 4 an
 - User Test: PASS
 
 ---
+
+## 12 COMMIT Unreleased 2026-10-16T08:02:17-07:00
+
+#### Coming From:
+
+Unreleased 699b3e2
+
+#### Purpose:
+
+Keep the calculator's RAM across a reset, by handing it to the board on a key press and asking for it back at start-up.
+
+#### Outcome:
+
+Tiny89 has the transport for persistent memory and it works; the calculator does not yet keep its session, and the reason is in the flash. What was built: `firmware/common/t89_save.c` and its header hold the CRC-32 ae350run checks a save with (the reflected CRC-32 of CRC-32/ISO-HDLC, which is zlib's and Ethernet's), the hex a line goes out as and the blank test that tells an unwritten save from a real one; `firmware/common/t89_key.c` gives Control to the program rather than the calculator, so `t89_kbd_command()` names a save and nothing is mapped from a report that carries it, which is why the chord cannot also type; and `firmware/apps/tiemu_smoke/main.c` asks for the RAM at start-up with `TinyNES NVRAM WANT` while the UART is still in loader mode, and hands it back on `Control` with `s` in TinyNES's own protocol, including the three `NVRAM BEGIN` warm-up lines and a four-millisecond pause between lines. The board refused any save over 8192 bytes -- a NES battery's size -- so `AE350_SAVE_MAX` in TinyTang's `ports/bl616/tang_fpga_uart.c` moved to 8 MiB, with TinyTang's own project control left as that repository's business. The host tests grew: `tests/test_t89_save.c` and `tests/run_t89_save_test.sh` are new and report 21 checks, including CRC fixtures taken from zlib rather than from this module's own arithmetic, and `tests/test_t89_key.c` went from 134 checks to 146 for the Control namespace. The program builds to 437554 bytes of text and the deployed artifact is 476960 bytes at SHA-256 `0813516bebbf443bff6296293ef6ac6eeff36fbc85b0e2d595117773e9a1a899`. TinyTang's BL616 firmware was rebuilt from its working tree and flashed; the board's build identity moved from `78a0748-dirty.5428ee7` to `162ff40-dirty.838a81f`, which also carried the uncommitted desk-layer keyboard fix that repository was holding. On the board, both halves of the transport were then verified, and separately. The load was tested first against a file this cycle put on the card itself: 262144 zero bytes at the save's path, whose CRC-32 zlib gives as `e20eea22`, and the running program reported `Tiny89 RAM GOT 262144 e20eea22` after the board served the file and the loader wrote it into `tihw.ram`, byte-exact and with the boot unchanged around it. The save was then the user's to trigger, and it reported `9ca4fec2` over the calculator's live RAM; a power cycle later the same program, loading what the board had written, reported `Tiny89 RAM GOT 262144 9ca4fec2`. That is an independent CRC at each end of a round trip through the card, and it proves the transport: the bytes leave the emulator, are decoded to a binary file by ae350run, survive a reprogramming of the FPGA, come back and land in `tihw.ram` unchanged. It does not prove that the calculator keeps its memory, and it does not: the user reports that after the reset the calculator ran the installation step it performs on a first boot and did not resume the session, so the OS treated the restored RAM as a fresh device's. The lead, and it is a lead rather than a finding: the flash is rebuilt from the converted image at every start, `core/ti_hw/mem.c`'s `memcpy(tihw.rom, img->data, img->size)` followed by `free(img->data)`, so the calculator is handed a virgin flash every boot, with no file system and no record of the RAM having been valid. On a real calculator both the RAM and the flash persist, and the OS decides from what it finds; here only the RAM can persist today, which fits a first-boot installation on every start regardless of the RAM. What this cycle did not establish is whether the OS also overwrites the restored RAM during its boot, which the next cycle has to answer before the flash work is designed, because a RAM restore can never show while the flash is virgin and a flash restore would be wasted if the RAM is overwritten anyway. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged, validated this sequential entry's six sections, prose, Status values and the log's twelve-entry count, and confirmed that no settled entry was rewritten.
+
+#### Next Steps:
+
+Find out what the calculator does to the RAM before designing the flash half. A diagnostic build of the same program should print a CRC of `tihw.ram` and of `tihw.rom` at both ends of the OS's boot -- once as soon as the save has been loaded and before the CPU first runs, and again when `Tiny89 READY` is printed -- because that distinguishes the two cases that matter: a RAM CRC that changes means the OS re-initialises it whatever we restore, and a RAM CRC that holds while the flash CRC moves means the flash is the missing half and the RAM restore is already right. Then the flash, which is 4 MiB and cannot ride the link as hex in any tolerable time: either the save direction gains a way to carry bytes, which the load direction already has, or the flash is compared against the image it booted from and sent only when it differs. Neither is in this cycle and both want the diagnostic's answer first. The transport built here stays either way, since it is the same machinery the flash needs. Entry 11's open items stand: KEY-001 is SOURCED until the codes that cycle added are confirmed on hardware, the DIAG=1 image still builds without having been run, the two bindings no PC key justifies are still the user's to move or keep, and the BL616 heap still refuses a 16384-byte script worker stack while the calculator runs. Entry 4's two items also stand, the video unit's FRAMES testbench disagreement and the four-level grayscale path still reporting LCDMODE=1bit on every heartbeat.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/main.c
+- firmware/common/t89_key.c
+- firmware/common/t89_key.h
+- firmware/common/t89_save.c
+- firmware/common/t89_save.h
+- tests/run_t89_save_test.sh
+- tests/test_t89_key.c
+- tests/test_t89_save.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

@@ -48,6 +48,14 @@ int t89_kbd_key(uint8_t usage);
  * name, which callers read as "keep the unshifted meaning". */
 int t89_kbd_shift_key(uint8_t usage);
 
+/* The program's own keys, taken from a report that carries Control.  Control
+ * is another bit of the modifier byte rather than a usage, and the calculator
+ * never sees a key held with it: nothing is mapped from such a report, so a
+ * command cannot also type. */
+#define T89_KBD_CMD_NONE 0
+#define T89_KBD_CMD_SAVE 1 /* Control with the s key: hand the RAM to the card */
+int t89_kbd_command(const t89_kbd_t *kbd);
+
 /* The keyboard as the calculator sees it: the set of keys the report implies,
  * written to the emulator as the difference from the report the module last
  * applied, which it keeps itself.  At most max_events events, or -1 if the
