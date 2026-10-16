@@ -55,6 +55,22 @@
 # keyboard. A power cycle is the way out and is safe -- nothing here reflashes
 # the FPGA, so the card's own core returns.
 #
+# Saving is Ctrl+S, which is the program's own key rather than the calculator's
+# and works whatever the calculator is doing. Three things are worth knowing
+# before relying on it. The board says on the Terminal what became of a save;
+# only `saved <n> bytes ... read back and verified <crc>` means the card holds
+# it, and anything else means it does not. A save that does not verify leaves
+# the one already on the card alone, so pressing the key again costs the time
+# and nothing else -- which matters because this link loses a frame about one
+# run in six, and trying again is the answer to that. And afterwards, check the
+# core is still active before trusting the session: the heartbeat is the
+# instrument, and it advances only while the program is presenting frames.
+#
+# The calculator powers itself down after a few idle minutes, and that state
+# looks exactly like a dead keyboard -- the picture stops and no key does
+# anything, End included at first. End is the calculator's ON key and wakes it;
+# then the arrow keys work again.
+#
 # Understand what the last line does before running this: ae350run holds the
 # Terminal for as long as the program runs, and this program is continuous. The
 # window stays busy while the calculator runs, which is normal; F6 switches

@@ -81,6 +81,19 @@ layers (see `firmware/common/t89_pad.h`); the mapping is a project choice and
 can be changed in the one table in `firmware/common/t89_pad.c`. Input work is
 paused at this state.
 
+The calculator's RAM is saved with Ctrl+S, which is the program's own key
+rather than the calculator's, and reaches the card over TinyTang's NVRAM
+protocol from `firmware/common/t89_save.h`. The board verifies what it writes:
+`ae350run` says `saved ... read back and verified` only after reopening the
+file and hashing it, and a save that does not verify leaves the one already on
+the card untouched, so pressing the key again costs the time and nothing else.
+Two habits follow from that. Read the board's own line before believing a save
+-- only the verified one means the card holds it. And check the core is still
+active afterwards: the heartbeat is the instrument, and it advances only while
+the program is presenting frames. The calculator powers itself down after a
+few idle minutes and that state is indistinguishable from a dead keyboard --
+the picture stops, no key does anything -- and End is its ON key.
+
 The video path is Tiny89's own (`fpga/tiny89_soc/video.sv`), and the app picks
 it by reading the video unit's ID register, so the same ELF still runs on the
 inherited TinyNES platform. `tests/tiny89_video_tb.sv` checks the geometry, the

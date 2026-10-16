@@ -561,3 +561,34 @@ Find the lost frame, which is now the whole of the byte payload's problem and th
 - User Test: FAIL
 
 ---
+
+## 16 COMMIT Unreleased 2026-10-16T13:16:34-07:00
+
+#### Coming From:
+
+Unreleased 9d132c7
+
+#### Purpose:
+
+Write down what a user has to know to save a calculator's state and trust the result, and record the measurement that makes retrying a save safe.
+
+#### Outcome:
+
+The two habits are in the documentation now, in the two places a user meets them. `README.md` gained a paragraph after the input section and `scripts/tiny89.tdsh` gained the same content as a procedure block, because the script is what a user reads before running the calculator: saving is Ctrl+S, which is the program's own key rather than the calculator's and works whatever the calculator is doing; the board says on the Terminal what became of a save, and only `saved ... read back and verified <crc>` means the card holds it, which is TinyTang's entry 85 and the read-back that makes it true; a save that does not verify leaves the one already on the card alone, so pressing the key again costs the time and nothing else; and afterwards the core's liveness is checked the same way the board's word is, with the heartbeat's moving `PC` and `LCD`, because two of tonight's three false alarms were a dead-looking calculator that was running. The paragraph also carries the calculator's own power-down, which has now cost two sessions: a TI-89 switches itself off after a few idle minutes on the clock the app runs at wall speed, the state is indistinguishable from a dead keyboard -- picture stopped, no key doing anything -- and End is its ON key, HID usage 0x4D, which `t89_key.c` already bound and whose own comment anticipated with "End ends the operation". The measurement behind the retry rule is nine byte-payload saves of 256 KiB attempted on the board tonight, six of which arrived whole, so about one in three fails and every failure arrived with all 262144 bytes present and a CRC that disagreed. That is the byte shape entry 15 measured and TinyTang's save direction carries; hex is still the default for exactly this reason, and the retry rule is what makes the faster shape usable anyway. Two corrections belong here rather than in a rewritten entry. The first is mine: entry 15's Next Steps and TinyTang's entry 85 both say about one run in six, which was five of six at the time and is one in three over the nine attempts now measured, so the smaller figure is superseded. The second is a stale number left in code: `ports/bl616/tang_fpga_uart.c` line 1271, committed in TinyTang's `8b54319`, carries "about one run in six", and a later cycle touching that comment should correct it. The session's other finding is a diagnosis rather than a change, and it is written down because it misled the agent three times in one night: every "the keyboard does nothing" on this board has been a Bluetooth link state and never the core, whether the K950 sitting on the host that was typing to the agent, a combo device dying on a supervision timeout with the Tang still waiting, or the calculator's own power-down. None of the three was visible from the console's output alone, and each was settled by a measurement -- `ble`, a `blescan`, and the heartbeat's `PC` and `LCD`. What this cycle did not do is put the changed `tiny89.tdsh` on the card, because the calculator was holding the console when the change was made and the script is deployed with `tinytang_put`; the card's copy is the one without the new block, and the next deployment of it is owed. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and that no settled entry was rewritten, and validated this entry's sequential number, six sections, prose, Status values and the log's sixteen-entry count against the template.
+
+#### Next Steps:
+
+Redeploy `scripts/tiny89.tdsh` to the card, which is the one part of this change a user has not seen, and it wants the console at a shell prompt to do it. Correct the "about one run in six" in `ports/bl616/tang_fpga_uart.c`'s save comment, which TinyTang's entry 85 superseded with one in three, in the next cycle that touches that file. The byte payload's loss itself is the open defect and it is TinyTang's entry 85's Next Steps: about one save in three arrives shifted with nothing at either end counting it, so the instrument has to count frames where they are framed rather than bytes where they arrive. The flash follows -- `tihw.rom` at 4 MiB, entry 13's subject, about 4.4 minutes of byte payload at the pace measured -- and the combination of a one-in-three failure with a four-minute transfer is what makes finding the loss worth doing before attempting it. A Bluetooth keyboard-and-mouse combo device was deferred rather than dropped at the user's direction: it connects and discovers its HID services but dies on a supervision timeout, and filling both slots from one device depends on whether it holds two links at once. Entry 11's open items stand, as do TinyTang's entry 83 and the repository's own build-identity item, which gained a second instance tonight: the same firmware source built twice gave `f9a30a8e...` and then `14bee380...`, so an image must be named by the hash of the copy that was flashed.
+
+#### Files Modified:
+
+- README.md
+- scripts/tiny89.tdsh
+
+#### Status:
+
+- Build: N/A
+- Deployment: NOT RUN
+- User Test: N/A
+
+---
