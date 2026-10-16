@@ -193,9 +193,10 @@ static int poll_keyboard(uint8_t *last_sequence, t89_key_event_t *events,
  */
 static void save_pace(void)
 {
-    const uint64_t until = t89_cycles64() + T89_CORE_HZ / 250u; /* 4 ms */
+    const uint64_t until =
+        t89_cycles64() + (uint64_t)T89_SAVE_PACE_MS * (T89_CORE_HZ / 1000u);
 
-    /* The line has to be out before the pause means anything: a line still in
+    /* The line has to be out before the pause means anything: bytes still in
      * the C library's buffer would pace nothing at all. */
     fflush(stdout);
     t89_wait_tx_idle();
@@ -218,6 +219,7 @@ static void save_ram(void)
 {
     char line[T89_SAVE_LINE_CHARS + 1];
     const size_t bytes = (size_t)tihw.ram_size;
+    const uint64_t started = t89_cycles64();
     uint32_t crc;
     size_t offset;
     int lead;
@@ -239,6 +241,24 @@ static void save_ram(void)
            crc, t89_save_is_blank(tihw.ram, bytes) ? " BLANK" : "");
     save_pace();
 
+    /* The payload is a burst of its own, and a burst's opening is where this
+     * link loses a chunk -- the BEGIN lines above are the same remedy for the
+     * header, which once arrived as "TinyNES N" and armed no save at all.
+     * Measured on 2026-10-16: 8096 of 8192 bytes arrived, exactly three lines
+     * short, with nothing dropped in the board's link ring, so the loss is a
+     * frame that neither end reports.  An empty line decodes to nothing
+     * (t89_save_hex writes no bytes for it), so a few of them cost the card
+     * nothing and spend the loss on air instead of on the calculator's RAM. */
+    for (lead = 0; lead < 4; lead++) {
+        printf("\n");
+        save_pace();
+    }
+
+    /* The payload as hex lines: TinyNES's own shape for a save, and the only
+     * one that has produced a valid file in the user's configuration -- a
+     * binary payload arrived complete and hashed differently, three times.
+     * The empty lines above are what closed that; t89_save.h carries the
+     * measurement and entry 14 records it. */
     for (offset = 0; offset < bytes; offset += T89_SAVE_LINE_BYTES) {
         t89_save_hex(line, tihw.ram + offset, T89_SAVE_LINE_BYTES);
         printf("%s\n", line);
@@ -248,7 +268,13 @@ static void save_ram(void)
     printf("TinyNES NVRAM DONE %08" PRIx32 "\n", crc);
     t89_wait_tx_idle();
     save_pace();
-    printf("Tiny89 RAM SAVED %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
+    /* SENT, not SAVED: this end can see what it transmitted and nothing else.
+     * Whether a save exists is the board's to say, and a cycle where the two
+     * disagreed is why the word changed. */
+    printf("Tiny89 RAM SENT %lu %08" PRIx32 " %lu ms%s\n", (unsigned long)bytes,
+           crc, (unsigned long)((t89_cycles64() - started) /
+                                (T89_CORE_HZ / 1000u)),
+           t89_save_is_blank(tihw.ram, bytes) ? " BLANK" : "");
 }
 
 #ifdef T89_DIAG

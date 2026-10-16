@@ -13,13 +13,23 @@
  * TinyTang's ae350run implements.  A program asks for the file with
  * "TinyNES NVRAM WANT <address> <room>" and receives it headerless at that
  * address, straight into the buffer it names; it hands one back by printing
- * "TinyNES NVRAM SAVE <length> <crc32>" and then the bytes as hex lines, which
- * ae350run decodes into a binary .sav and checks, discarding it if the length
- * or the CRC disagree.
+ * "TinyNES NVRAM SAVE <length> <crc32>" and then the bytes as hex lines,
+ * which ae350run decodes into a binary .sav and checks when the DONE line
+ * arrives, discarding the file if the length or the CRC disagree.
  *
- * Hex is the wire's requirement rather than a choice: in link mode the line
- * carries text frames, and a line ends only at a newline, so binary cannot go
- * as it is and four bits to a hex digit leave neither.
+ * Hex is TinyNES's shape and it is also the only one that has produced a valid
+ * file in the user's configuration.  A binary payload was built and is faster
+ * -- the bytes themselves, 128 to a frame, tens of kilobytes a second -- and it
+ * worked in every run measured on the bench, but three saves from the user's
+ * own procedure produced no file: each reported the whole 262144 bytes, nothing
+ * dropped in the link ring, and a CRC that disagreed with the header.  Every
+ * byte arrived and they were not the same bytes, at both 8 KB/s and 32 KB/s.
+ * What that was is measured and recorded in core-log entry 14: frames of a
+ * payload go missing without either end counting them, and a burst's opening
+ * is where it happens, so the save warms the payload with empty lines and
+ * gives the board more room between lines.  With both, the full 262144 bytes
+ * arrive whole and the CRC agrees at both ends.  Hex stays the payload because
+ * it is the shape that has produced a valid file.
  */
 #ifndef T89_SAVE_H
 #define T89_SAVE_H
@@ -32,6 +42,18 @@
 /* TinyNES's line: 32 bytes as 64 hex digits, then the newline that frames it. */
 #define T89_SAVE_LINE_BYTES 32u
 #define T89_SAVE_LINE_CHARS (2u * T89_SAVE_LINE_BYTES)
+/* How long the board is given to file one line: four milliseconds, TinyNES's
+ * own measured figure on this board, which is about 8 KB/s.  The rate is one
+ * number to raise once a measurement from the user's side justifies it; what
+ * has been measured there is that a faster payload did not survive.
+ *
+ * Raised to eight on 2026-10-16, and the measurement is the justification: an
+ * 8192-byte save lost exactly three lines, with nothing counted as dropped at
+ * either end, so the 4 ms figure is not enough room in this configuration.  It
+ * is the one number that changes, so if a save lands now and did not at four,
+ * this is what did it; if it still does not, the pause is not the mechanism
+ * and this goes back. */
+#define T89_SAVE_PACE_MS 8u
 
 /* CRC-32 as ae350run checks it with (ae350_load.c's ae350_crc32): the
  * reflected CRC-32 of CRC-32/ISO-HDLC, which is zlib's and Ethernet's.  Start
