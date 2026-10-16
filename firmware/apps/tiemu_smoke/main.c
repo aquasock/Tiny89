@@ -248,6 +248,24 @@ static void save_ram(void)
      * missing; the count still reads complete and the content is shifted.
      * Built with `make BINARY=1`; core-log entry 15 has the numbers. */
     const size_t frame = 128u;
+    /* Kept deliberately, and only in this build: a CRC of the bytes as they are
+     * handed to the UART, against the CRC in the header that was computed from
+     * a first pass over the same RAM.  Equal, and the program sent exactly what
+     * it hashed and whatever the board saw wrong was the link's doing; different,
+     * and the RAM moved between the two passes, which is a fault of the
+     * emulator's state rather than of the transport.  The two are
+     * indistinguishable from the board's side -- both look like the right number
+     * of wrong bytes -- and this is the cheapest place to tell them apart.  It
+     * runs on this board only under `make BINARY=1`, so the default image is
+     * unchanged by its presence, and core-log entry 17 is where it earned its
+     * keep: equal on the saves that worked, and the failing one's own send line
+     * arriving with its first eighteen characters eaten, which is the transport
+     * and not the state.  It stays because the next cycle's instrument is this
+     * one; it is one line of output per save.  Its own line is printed before
+     * DONE, so on a failed save it is inside the bytes the board over-consumes
+     * and is lost with them -- a few blank lines after the payload would
+     * preserve it if that number is ever wanted from a failure. */
+    uint32_t sent = 0;
 
     printf("TinyNES NVRAM DATA %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
     save_pace();
@@ -258,13 +276,20 @@ static void save_ram(void)
      * payload of raw memory would insert a byte and change the length.  The
      * BEGIN lines above are the whole warm-up this shape gets. */
     for (offset = 0; offset < bytes; offset++) {
-        t89_put_char((char)tihw.ram[offset]);
+        const uint8_t byte = tihw.ram[offset];
+
+        sent = t89_save_crc32(sent, &byte, 1);
+        t89_put_char((char)byte);
         if ((offset + 1u) % frame == 0u) {
             save_pace();
         }
     }
     t89_wait_tx_idle();
     save_pace();
+    printf("Tiny89 SAVE hashed %08" PRIx32 " header %08" PRIx32 " %s\n",
+           sent, crc,
+           sent == crc ? "the bytes sent are the bytes hashed"
+                       : "THE RAM MOVED UNDER THE READ");
 #else
     printf("TinyNES NVRAM SAVE %lu %08" PRIx32 "%s\n", (unsigned long)bytes,
            crc, t89_save_is_blank(tihw.ram, bytes) ? " BLANK" : "");
