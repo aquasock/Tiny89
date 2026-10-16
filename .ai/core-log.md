@@ -300,3 +300,41 @@ The mapping itself is the next cycle, and the gaps are named: the calculator's `
 - User Test: PASS
 
 ---
+
+## 8 COMMIT Unreleased 2026-10-16T05:59:15-07:00
+
+#### Coming From:
+
+Unreleased adf377a
+
+#### Purpose:
+
+Take the calculator's BIOS off the SD card, as the file the user provides, instead of carrying TI's operating system inside the program.
+
+#### Outcome:
+
+What the user is asked for is the upgrade TI ships -- `**TIFL**`, 1,400,021 bytes -- and not a raw image, which is the better shape as well as the one a person has: it is a third of the 4,194,304 bytes a raw image takes, so a launch moves less of it over the link. The program no longer embeds the operating system at all: `flash.S` and its `flash.raw` rule are out of `firmware/apps/tiemu_smoke/Makefile` and the shim is removed from the tree, so `tools/build-ae350-probe.sh` no longer needs the private file for anything and the program's text fell from 4,627,562 to 436,354 bytes. Its BIOS comes over the link the way a cartridge does: `firmware/apps/tiemu_smoke/main.c` prints `TinyNES WANT <address> <bytes>` and receives `TNR1`, the length and the file in the boot ROM's load protocol, which meant linking `firmware/boot/load.c` and the boot support's `uart.c` into the app; TinyTang's `ae350run <program> <file>` is what answers that line, from the card, which is TinyNES's path and needs no computer beside the board. `firmware/common/t89_bios.c` and its header are the conversion, in C, because the card is where the file lives: the `**TIFL**` record walk to its last record, the checks the Python tool makes (device type 0x98, data type 0x23, a boot vector selecting ROM base 0x80, and the payload fitting), and the 4 MiB layout TiEmu 3.04's `ti68k_convert_tib_to_image` uses -- the boot sector at the front, the marker 0xFEEDBABE, the 24-byte hardware parameter block and the system part at 0x12000. It is deliberately the same arithmetic as `tools/convert_89u.py`, and `tests/run_t89_bios_test.sh` proves it rather than assuming it: the C and the Python tool were run on the real file and their outputs compared byte for byte, and they agree. The test also refuses what should be refused -- garbage, a record longer than the file, an OS record too short for a boot sector, a record that is not a TI-89 image, and a last record that is not an OS -- and, since the operating system is proprietary and lives outside this repository, it says so loudly and runs only the refusals when there is no file to compare against. The other four host tests still pass: `t89_key` 33 checks, `t89_lcd` 46, `t89_pad` 205 and the sweep limiter 6. It was deployed with both files put on the card -- the stripped program at `/root/ae350/tiemu_smoke.elf`, 475,760 bytes, and the upgrade at `/root/media/bios/TI89Titanium_OS.89u` in the folder the user made for it -- and then `tangload /root/cores/console138k/tiny89.bin` followed by `ae350run /root/ae350/tiemu_smoke.elf /root/media/bios/TI89Titanium_OS.89u` on the board's own console. The user reports the calculator on screen, which is the whole claim: the BIOS was read from the card, converted on the board, and booted. `tools/deploy-ae350-probe.sh` gained an argument for the upgrade so the host loader can still answer the request from a PC-side file, and the board's `ae350run` is the path this cycle exercised and the one to document; it hands the link back when the program prints `TinyNES LINK`, which is why the keyboard kept working while the run was being watched, unlike the host's `fpgapipe`. One thing is left unexplained rather than tidied away: while `ae350run` held the console, what reached the host was the heartbeat as a frame header, `AA` and a CRLF once a second, rather than text I could read; the proof that the program had not failed was that every BIOS failure path returns from `main`, which would have ended `ae350run` and given the shell back, and it did not. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed `.ai/core.md` unchanged, and validated this entry's six sections, sequential number, prose, Status values and the log's 100-entry limit.
+
+#### Next Steps:
+
+Explain the `AA` the console shows while the program runs: the heartbeat reaches the host as a frame header and a newline rather than as text, and while the failure paths are ruled out by the program still running, the reading is not understood. Then the mapping, which is the next cycle the user named: `ON`, `CLEAR`, `HOME`, `APPS`, `STO`, `NEGATE`, `EE`, `POWER`, `SIN`, `COS`, `TAN`, `LN`, `THETA`, `NU`, `SPACE` and the calculator's own `F1` to `F8` reach it as nothing, `ON` and `CLEAR` most of all, and the main row cannot produce `PLUS` or `MULTIPLY` because those are Shift+`=` and Shift+`8` and the modifier byte is deliberately unmapped. A `tiny89.tdsh` that names the program and the BIOS would make the card flow a double-click rather than a typed command. TinyTang still carries its unflashed hidden-branch keyboard fix, and entry 4's two open items stand: the video unit's `FRAMES` testbench disagreement and the four-level grayscale path implemented but not demonstrated.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/flash.S
+- firmware/apps/tiemu_smoke/main.c
+- firmware/common/t89_bios.c
+- firmware/common/t89_bios.h
+- tests/run_t89_bios_test.sh
+- tests/test_t89_bios.c
+- tools/build-ae350-probe.sh
+- tools/deploy-ae350-probe.sh
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

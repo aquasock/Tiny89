@@ -16,6 +16,7 @@ CPPFLAGS   := -DNO_GDB -DNO_SOUND -D__inline__=inline -DSTATFS_NO_ARGS=2 \
               -DSTATBUF_BAVAIL=f_bavail \
               -I$(ROOT)/src/port -I$(ROOT)/firmware/include \
               -I$(ROOT)/firmware/common \
+              -I$(ROOT)/firmware/boot -I$(ROOT)/firmware/boot/support \
               -I$(TIEMU_SRC) -I$(TIEMU_SRC)/core -I$(UAE) \
               -I$(TIEMU_SRC)/core/ti_hw -I$(TIEMU_SRC)/core/ti_sw \
               -I$(TIEMU_SRC)/core/dbg -I$(TIEMU_SRC)/misc
@@ -52,7 +53,10 @@ RT_SOURCES := $(ROOT)/firmware/rt/crt0.S $(ROOT)/firmware/rt/syscalls.c \
 T89_KEY_SOURCE := $(ROOT)/firmware/common/t89_key.c
 T89_LCD_SOURCES := $(ROOT)/firmware/common/t89_lcd.c \
                    $(ROOT)/firmware/common/t89_lcd_gray.c
-APP_SOURCES := main.c flash.S $(T89_KEY_SOURCE) $(T89_LCD_SOURCES)
+APP_SOURCES := main.c $(ROOT)/firmware/boot/load.c \
+               $(ROOT)/firmware/boot/support/uart.c \
+               $(ROOT)/firmware/common/t89_bios.c \
+               $(T89_KEY_SOURCE) $(T89_LCD_SOURCES)
 
 core_object = $(BUILD)/obj/core/$(notdir $(1)).o
 rt_object   = $(BUILD)/obj/rt/$(notdir $(1)).o
@@ -85,17 +89,11 @@ $(foreach source,$(CORE_SOURCES),$(eval $(call compile_c,$(call core_object,$(so
 $(foreach source,$(filter %.c,$(RT_SOURCES)),$(eval $(call compile_c,$(call rt_object,$(source)),$(source))))
 $(foreach source,$(filter %.S,$(RT_SOURCES)),$(eval $(call compile_s,$(call rt_object,$(source)),$(source))))
 $(eval $(call compile_c,$(call app_object,main.c),main.c))
+$(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/boot/load.c),$(ROOT)/firmware/boot/load.c))
+$(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/boot/support/uart.c),$(ROOT)/firmware/boot/support/uart.c))
+$(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/common/t89_bios.c),$(ROOT)/firmware/common/t89_bios.c))
 $(eval $(call compile_c,$(call app_object,$(T89_KEY_SOURCE)),$(T89_KEY_SOURCE)))
 $(foreach source,$(T89_LCD_SOURCES),$(eval $(call compile_c,$(call app_object,$(source)),$(source))))
-
-$(BUILD)/flash.raw: FORCE
-	@test -n "$(OS_IMAGE)" || { echo "set OS_IMAGE=<private.raw>" >&2; exit 1; }
-	@mkdir -p $(dir $@)
-	@cmp -s "$(OS_IMAGE)" $@ || cp "$(OS_IMAGE)" $@
-
-$(call app_object,flash.S): flash.S $(BUILD)/flash.raw $(MAKEFILE_LIST)
-	@mkdir -p $(dir $@)
-	$(CC) $(ASFLAGS) -DT89_FLASH_FILE='"$(BUILD)/flash.raw"' -c -o $@ $<
 
 clean:
 	rm -rf $(BUILD)

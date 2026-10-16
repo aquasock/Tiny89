@@ -10,9 +10,8 @@
 # the expected outcome once the marker has been seen.  What this script
 # requires instead is the marker, and the absence of a line starting with BAD.
 # It also needs the AE350 core image to be the running FPGA core: load it with
-# `tangload /root/cores/console138k/tiny89-ae350.bin` on TinyTang's console
-# first, since the AE350's boot ROM must be the thing on the other end of the
-# pipe.  A power cycle reloads whatever core the FPGA's own flash holds, so
+# `tangload /root/cores/console138k/tiny89.bin` on TinyTang's console first,
+# since the AE350's boot ROM must be the thing on the other end of the pipe.  A power cycle reloads whatever core the FPGA's own flash holds, so
 # the core and then this program are loaded again after one.
 #
 #   tools/deploy-ae350-probe.sh [elf]           RUN_SECONDS=300 by default
@@ -23,6 +22,11 @@ repo_root="$(git rev-parse --show-toplevel)"
 tinynes="${TINYNES_DIR:-$(dirname "${repo_root}")/TinyNES}"
 port="${TINYTANG_PORT:-/dev/ttyACM0}"
 elf="${1:-${repo_root}/build/firmware/apps/tiemu_smoke/tiemu_smoke.elf}"
+# The program asks for its BIOS, so the loader has to be able to answer: this
+# sends the .89u from the PC.  To take it from the card instead, put the
+# program on the card and run `ae350run <app> /root/media/bios/<file>` on the
+# board's own console -- that is TinyNES's way and needs no PC at all.
+bios="${2:-${T89_OS_IMAGE:-}}"
 run_seconds="${RUN_SECONDS:-300}"
 marker="${MARKER:-Tiny89 READY}"
 
@@ -41,8 +45,15 @@ log="$(mktemp -t tiny89-deploy.XXXXXX)"
 trap 'rm -f "${log}"' EXIT
 
 set +e
+file_args=()
+if [[ -n "${bios}" ]]; then
+    file_args=(--file "${bios}")
+    echo "BIOS: ${bios}"
+fi
+
 python3 -u "${tinynes}/tools/load_ae350.py" \
     --tinytang --port "${port}" --timeout 15 --run-timeout "${run_seconds}" \
+    "${file_args[@]}" \
     --expect "${marker}" "${elf}" >"${log}" 2>&1
 loader_status=$?
 set -e

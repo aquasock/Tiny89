@@ -22,12 +22,20 @@
 #include "kbd.h"
 #include "libuae.h"
 #include "m68k.h"
+#include "load.h"
+#include "tinynes.h"
+#include "t89_bios.h"
 #include "t89_lcd.h"
 #include "t89_key.h"
 #include "tiny89_platform.h"
 #include "ti68k_def.h"
 
-#define FLASH_BYTES (4u * 1024u * 1024u)
+#define FLASH_BYTES T89_BIOS_BYTES
+
+/* "TNR1" as the little-endian word the loader puts in front of a file it is
+ * asked for, then the file's length: TinyNES's framing, which TinyTang's
+ * ae350run uses to serve a file from the card. */
+#define T89_TNR1_MAGIC 0x31524e54u
 
 /*
  * One 60 Hz video frame of emulated time.  The TI-89 Titanium's CPU is 12 MHz
@@ -47,9 +55,6 @@
 #define READY_STABLE_FRAMES 30u  /* or this many unchanged LCD frames */
 #define HEARTBEAT_FRAMES    60u  /* one status line per this many frames */
 #define MAX_KEY_EVENTS      32
-
-extern const uint8_t tiny89_flash_image[];
-extern const uint8_t tiny89_flash_image_end[];
 
 static uint32_t lcd_hash(void)
 {
@@ -159,6 +164,7 @@ static int poll_keyboard(uint8_t *last_sequence, t89_key_event_t *events)
 int main(void)
 {
     uint8_t *flash;
+    uint8_t *upgrade;
     t89_key_event_t events[MAX_KEY_EVENTS];
     const char *video;
     uint32_t video_id, frames, last_frames, last_lcd = 0;
@@ -168,17 +174,53 @@ int main(void)
     int gray, ready_printed = 0;
 
     printf("Tiny89 AE350 TiEmu smoke start\n");
-    if ((size_t)(tiny89_flash_image_end - tiny89_flash_image) != FLASH_BYTES) {
-        printf("BAD Tiny89 flash size=%" PRIu32 "\n",
-            (uint32_t)(tiny89_flash_image_end - tiny89_flash_image));
+
+    /* The BIOS comes off the card the way a cartridge does.  The program asks
+     * the loader for a file at an address it chooses and receives "TNR1", the
+     * length and the file -- TinyNES's protocol, whose "TinyNES WANT <address>
+     * <bytes>" line TinyTang's ae350run answers from the card.  What the user
+     * provides is the upgrade TI ships, so it is converted here into the 4 MiB
+     * image the emulator boots (firmware/common/t89_bios.c). */
+    upgrade = malloc(T89_BIOS_MAX + 8);
+    flash = malloc(T89_BIOS_BYTES);
+    if (upgrade == NULL || flash == NULL) {
+        printf("BAD Tiny89 BIOS allocation\n");
         return 1;
     }
-    flash = malloc(FLASH_BYTES);
-    if (!flash) {
-        printf("BAD Tiny89 flash allocation\n");
-        return 1;
+
+    printf("TinyNES WANT %08lx %08lx\n", (unsigned long)(uintptr_t)upgrade,
+           (unsigned long)(T89_BIOS_MAX + 8));
+    fflush(stdout);
+    tn_load_reset();
+    {
+        uint32_t got = 0;
+        int second;
+
+        for (second = 0; second < 30 && got == 0; second++) {
+            got = tn_load_poll(TN_CORE_HZ);
+        }
+        if (got != (uint32_t)(uintptr_t)upgrade) {
+            printf("BAD Tiny89 BIOS not loaded\n");
+            return 1;
+        }
     }
-    memcpy(flash, tiny89_flash_image, FLASH_BYTES);
+    {
+        uint32_t magic, length;
+        char why[64];
+
+        memcpy(&magic, upgrade, 4);
+        memcpy(&length, upgrade + 4, 4);
+        if (magic != T89_TNR1_MAGIC || length == 0 || length > T89_BIOS_MAX) {
+            printf("BAD Tiny89 BIOS framing\n");
+            return 1;
+        }
+        if (t89_bios_from_89u(upgrade + 8, length, flash, why, sizeof why) != 0) {
+            printf("BAD Tiny89 BIOS %s\n", why);
+            return 1;
+        }
+        printf("Tiny89 BIOS %lu bytes of upgrade\n", (unsigned long)length);
+    }
+    free(upgrade);
 
     memset(&img_infos, 0, sizeof(img_infos));
     img_infos.data = flash;
