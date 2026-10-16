@@ -1,7 +1,21 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Tiny89's AE350 program: the emulated calculator and its console report.
+#
+#   make           the program, build/firmware/apps/tiemu_smoke/
+#   make DIAG=1    it with the per-second heartbeat instead of one a minute,
+#                  build/firmware/apps/tiemu_smoke_diag/
+#
+# The default build reports once a minute, the way TinyNES's board build does
+# (main.c: HEARTBEAT_FRAMES).  DIAG=1 is TinyNES's flag for a build that says
+# more, and here it changes that one interval and nothing else.
 
 ROOT       := $(abspath ../../..)
+ifeq ($(DIAG),1)
+BUILD      ?= $(ROOT)/build/firmware/apps/tiemu_smoke_diag
+else
 BUILD      ?= $(ROOT)/build/firmware/apps/tiemu_smoke
+endif
 TIEMU_ROOT ?= $(ROOT)/third_party/tiemu
 TIEMU_SRC  := $(TIEMU_ROOT)/tiemu/trunk/src
 UAE        := $(TIEMU_SRC)/core/uae
@@ -20,6 +34,8 @@ CPPFLAGS   := -DNO_GDB -DNO_SOUND -D__inline__=inline -DSTATFS_NO_ARGS=2 \
               -I$(TIEMU_SRC) -I$(TIEMU_SRC)/core -I$(UAE) \
               -I$(TIEMU_SRC)/core/ti_hw -I$(TIEMU_SRC)/core/ti_sw \
               -I$(TIEMU_SRC)/core/dbg -I$(TIEMU_SRC)/misc
+APP_DEFS   := $(if $(filter 1,$(DIAG)),-DT89_DIAG)
+CPPFLAGS   += $(APP_DEFS)
 CFLAGS     := $(COMMON) -std=gnu11
 ASFLAGS    := $(ARCH) -g
 LDFLAGS    := $(ARCH) -nostdlib -static -T $(ROOT)/firmware/rt/link.ld \
@@ -94,6 +110,22 @@ $(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/boot/support/uart.c),
 $(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/common/t89_bios.c),$(ROOT)/firmware/common/t89_bios.c))
 $(eval $(call compile_c,$(call app_object,$(T89_KEY_SOURCE)),$(T89_KEY_SOURCE)))
 $(foreach source,$(T89_LCD_SOURCES),$(eval $(call compile_c,$(call app_object,$(source)),$(source))))
+
+# DIAG changes a define and nothing else, so main.c's object would otherwise
+# survive a change to it: the options are kept in a file that is rewritten
+# only when they change, and main.c's object depends on it.  TinyNES's
+# Makefile keeps the same guard around its PLAY and DIAG builds, but writes
+# the file only when the values differ -- which leaves the dependency missing
+# on the first build of a tree that defines nothing, so the file is created
+# here when it does not exist as well.
+DEFS_STAMP := $(BUILD)/app_defs
+ifeq ($(wildcard $(DEFS_STAMP)),)
+$(shell mkdir -p $(BUILD))
+$(file >$(DEFS_STAMP),$(APP_DEFS))
+else ifneq ($(file <$(DEFS_STAMP)),$(APP_DEFS))
+$(file >$(DEFS_STAMP),$(APP_DEFS))
+endif
+$(call app_object,main.c): $(DEFS_STAMP)
 
 clean:
 	rm -rf $(BUILD)

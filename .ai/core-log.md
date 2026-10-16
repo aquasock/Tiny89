@@ -368,3 +368,34 @@ Confirm the desktop path itself: the script that booted the calculator this cycl
 - User Test: PASS
 
 ---
+
+## 10 COMMIT Unreleased 2026-10-16T07:08:15-07:00
+
+#### Coming From:
+
+Unreleased bf35605
+
+#### Purpose:
+
+Make the program report the way TinyNES's board build does, one line a minute instead of one a second, and keep the per-second stream behind a diagnostic build.
+
+#### Outcome:
+
+`firmware/apps/tiemu_smoke/main.c`'s `HEARTBEAT_FRAMES` moved from `60u` to `3600u` -- about a minute at the fabric's 60 Hz, and the value TinyNES uses for `NES_REPORT` in its `PLAY=1` build -- so the calculator now sits on the console as quietly as a game does, and the per-second stream that found faults on the NES side became a build option, mirroring TinyNES's own `DIAG=1`: `-DT89_DIAG` selects `60u`, and the Makefile gives that build `build/firmware/apps/tiemu_smoke_diag/` while the default keeps `build/firmware/apps/tiemu_smoke/`. Nothing else changed, and `Tiny89 READY` and `BAD` are untouched, which is what `tools/deploy-ae350-probe.sh` waits for and rejects. A define can compile and still be wrong, so the change was checked at the preprocessor first: the default expands to `presented % 3600u == 0u` and `-DT89_DIAG` to `presented % 60u == 0u`. Both images build, the default at `text 436358` and the DIAG image at `436354`, the four bytes being the `#ifdef` and the pair sitting four above entry 8's recorded `436354` for the deployed program. On the board the quiet image booted as every previous cycle did -- `Tiny89 AE350 C OK`, `Tiny89 SDRAM OK 32M`, `TinyNES LOAD`, `Tiny89 BIOS 1400021 bytes of upgrade`, the same boot vectors `SSP=00004c00 PC=00812188`, `Tiny89 VIDEO T89V`, `TinyNES LINK`, and `Tiny89 READY PC=0095c5e6 LCD=5ed11146` once -- and then produced 106 bytes in a 50.2-second window, one heartbeat at `n=3600` reading `PC=00821e46 CYC=1775609980 LCD=0c0df297 VBL=4440 KBDS=0 KEYS=0 VID=T89V LCDMODE=1bit`, where the build it replaced would have printed about fifty lines in that time. It is deployed as `/root/ae350/tiemu_smoke.elf`, 475768 bytes, SHA-256 `b6d69d34ec31fbcd481e2affadef396c0ad1d7d5fd7d14f28da27bed70d90876`. Two faults of this cycle's own are recorded. The first build failed outright, `No rule to make target app_defs`, because the guard that stops a stale `main.c.o` from surviving a define change wrote its options file only when the values differed, so the default build, which defines nothing, wrote no file at all while `main.c.o` depended on one; the test written to check that guard asserted the stamp's contents and never its existence, which is why the flaw reached the real build, and the guard now creates the file when it is missing and rewrites it only when the values change, with TinyNES's Makefile carrying the same hole around its `PLAY` and `DIAG` flags. The second was the artifact itself: the first deployment was a `--strip-debug` build at 567388 bytes, and entry 8's recorded 475760 showed that `--strip-all` is what this card has been given, which reproduces that size to within the four bytes above. That heartbeat also closed entry 9's open question about the LCD hash: a fresh boot reports `PC=00821e46 LCD=0c0df297`, entry 8's own pair, so the `336b6239` and `7965f149` seen at that address earlier were the user's session on the screen rather than a defect. The user compared the result against TinyNES on the board and reports it works the same. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged, validated this sequential entry's six sections, prose, Status values and the log's ten-entry count, and confirmed that no settled entry was rewritten.
+
+#### Next Steps:
+
+The `DIAG=1` image builds but was never run on the board, so a cycle that needs the per-second stream should exercise it before relying on it. Entry 9's ceiling stands and is now the sharpest limit on the card flow: with the calculator running the BL616 heap reports 25060 bytes free of 120680 and refuses a 16384-byte script worker stack, so no desktop script can start beside a running calculator, and the order that works is the script starting the calculator rather than the reverse. Quieting the heartbeat makes the console usable while the calculator runs, which is what made entry 9's measurements awkward, though the desk layer's own traffic and the keyboard frames still cross that wire, and the calculator still outlives the desktop core it was started from. The keyboard mapping remains the next cycle the user named, with `ON`, `CLEAR` and the Shift-modified `PLUS` and `MULTIPLY` the gaps that matter most. Entry 4's two open items stand, the video unit's `FRAMES` testbench disagreement and the four-level grayscale path still reporting `LCDMODE=1bit` on every heartbeat, and the launch still re-sends the program and the BIOS on every run.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/main.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

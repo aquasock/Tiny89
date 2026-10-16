@@ -53,7 +53,20 @@
 
 #define READY_FRAMES        300u /* presented frames that satisfy READY */
 #define READY_STABLE_FRAMES 30u  /* or this many unchanged LCD frames */
-#define HEARTBEAT_FRAMES    60u  /* one status line per this many frames */
+
+/*
+ * One status line per this many presented frames.  3600 is about a minute at
+ * the fabric's 60 Hz, and is the value TinyNES uses for NES_REPORT in its
+ * board build, so the calculator sits on the console as quietly as a game
+ * does.  A DIAG=1 build asks for the per-second stream instead, which is what
+ * TinyNES's own DIAG=1 build does and what every earlier Tiny89 cycle read on
+ * the console to check the emulator and the keyboard.
+ */
+#ifdef T89_DIAG
+#define HEARTBEAT_FRAMES    60u
+#else
+#define HEARTBEAT_FRAMES    3600u
+#endif
 #define MAX_KEY_EVENTS      32
 
 static uint32_t lcd_hash(void)
@@ -370,7 +383,8 @@ int main(void)
                     (uint32_t)m68k_getpc(), hash);
             }
 
-            /* (e) One heartbeat per HEARTBEAT_FRAMES presented frames. */
+            /* (e) The heartbeat, at HEARTBEAT_FRAMES: one line a minute by
+             * default, one a second in a DIAG=1 build. */
             if (presented % HEARTBEAT_FRAMES == 0u) {
                 printf("Tiny89 FRAME n=%u PC=%08" PRIx32 " CYC=%u"
                        " LCD=%08" PRIx32 " VBL=%u KBDS=%u KEYS=%d"
