@@ -1,0 +1,109 @@
+#!/bin/tdsh
+# tiny89.tdsh - load the Tiny89 core and boot the TI-89 Titanium on the AE350.
+#
+# Run it from the desktop -- right-click its icon and choose Run -- or from the
+# Terminal or the console prompt:
+#
+#     tdsh run /root/Desktop/tiny89.tdsh
+#
+# Put it on the card with TinyTang's tool, from this repository:
+#
+#     python3 "$TINYTANG_DIR/tools/tinytang_put.py" --port /dev/ttyACM0 \
+#         scripts/tiny89.tdsh /root/Desktop/tiny89.tdsh
+#
+# It needs three files on the card and checks each before it starts:
+#
+#     the core     /root/cores/console138k/tiny89.bin      tangload programs the FPGA with it
+#     the program  /root/ae350/tiemu_smoke.elf             ae350run sends it to the AE350
+#     the upgrade  /root/media/bios/TI89Titanium_OS.89u    the BIOS, sent when the program asks
+#
+# Each path may be overridden by setting the variable in the session first;
+# `tdsh run` passes no arguments, but the script inherits the session's
+# variables:
+#
+#     BIOS=/root/media/bios/other.89u; tdsh run /root/Desktop/tiny89.tdsh
+#
+# What the user provides is TI's own upgrade file (`**TIFL**`, 1,400,021 bytes),
+# not a raw image: the program asks for it over the link and the converter
+# inside the program builds the 4 MiB flash image on the board. The operating
+# system is proprietary and lives outside this repository.
+#
+# The order is the one that works. tangload puts the core in, and ae350run then
+# loads the program, serves it the upgrade, and stays with it: once the program
+# prints `TinyNES LINK` -- which it does when the BIOS has been converted and
+# the emulator is running -- ae350run hands the link back to the desk layer, so
+# the Bluetooth keyboard drives the calculator from that moment on and F12
+# still swaps between it and TinyDesk.
+#
+# There is deliberately no `fpga` probe between the two. A freshly loaded core
+# sits in its boot ROM's loader mode, and the desk link only sees TinyTang's
+# frames while the UART's link mode is set -- which the program sets, not the
+# boot ROM (fpga/tiny89_soc/exts_uart.sv routes received bytes to the desk link
+# only when CTRL bit 0 is set, and firmware/apps/tiemu_smoke/main.c:318 is the
+# only thing that sets it). So `fpga` cannot be answered at this point on this
+# core and such a check can never pass; measured on this board on 2026-10-16,
+# where `fpga` answers `core 84` for the desktop core, whose own program is
+# already running, and does not answer at all for a core just tangloaded.
+# ae350run makes the check that matters instead: it waits for the boot ROM's
+# own `TinyNES LOAD` and reports when that does not come.
+#
+# Understand the failure mode before relying on the checks above. If this script
+# stops before the program runs, the board is left in loader mode: the core's
+# video was never enabled, so the screen shows the fabric's colour bars, and
+# both the desk layer and the keyboard need link mode, so no key reaches
+# TinyDesk and F12 cannot bring it back. That state cannot be left from the
+# keyboard. A power cycle is the way out and is safe -- nothing here reflashes
+# the FPGA, so the card's own core returns.
+#
+# Understand what the last line does before running this: ae350run holds the
+# Terminal for as long as the program runs, and this program is continuous. The
+# window stays busy while the calculator runs, which is normal; F6 switches
+# windows, and a board reset is what ends the session. Nothing is reflashed, so
+# power-cycling is safe and puts the card's own core back.
+
+if "$CORE" == ""
+    CORE=/root/cores/console138k/tiny89.bin
+endif
+if "$PLAYER" == ""
+    PLAYER=/root/ae350/tiemu_smoke.elf
+endif
+if "$BIOS" == ""
+    BIOS=/root/media/bios/TI89Titanium_OS.89u
+endif
+
+echo "tiny89: core   $CORE"
+echo "tiny89: player $PLAYER"
+echo "tiny89: bios   $BIOS"
+
+if test -f "$CORE"
+    echo "tiny89: core image found"
+else
+    echo "tiny89: no core image at $CORE"
+    return 1
+endif
+if test -f "$PLAYER"
+    echo "tiny89: program found"
+else
+    echo "tiny89: no program at $PLAYER"
+    return 1
+endif
+if test -f "$BIOS"
+    echo "tiny89: upgrade found"
+else
+    echo "tiny89: no TI-89 upgrade at $BIOS"
+    return 1
+endif
+
+echo "tiny89: programming the FPGA"
+tangload "$CORE"
+if $? != 0
+    echo "tiny89: the core did not load"
+    return 1
+endif
+
+echo "tiny89: sending the program and the upgrade; the calculator boots on the AE350"
+echo "tiny89: the keyboard drives it once the picture is up; reset the board to end it"
+ae350run "$PLAYER" "$BIOS"
+RESULT=$?
+echo "tiny89: the program stopped ($RESULT)"
+return $RESULT

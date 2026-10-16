@@ -338,3 +338,33 @@ Explain the `AA` the console shows while the program runs: the heartbeat reaches
 - User Test: PASS
 
 ---
+
+## 9 COMMIT Unreleased 2026-10-16T06:30:40-07:00
+
+#### Coming From:
+
+Unreleased 37dece7
+
+#### Purpose:
+
+Put the card flow on TinyDesk's desktop as a script the user can right-click and run, so that booting the calculator no longer needs two commands typed at the console.
+
+#### Outcome:
+
+`scripts/tiny89.tdsh` is Tiny89's first card-side script. It checks the three files it needs, tangloads `/root/cores/console138k/tiny89.bin`, runs `ae350run` with `/root/ae350/tiemu_smoke.elf` and `/root/media/bios/TI89Titanium_OS.89u`, and returns the program's status, with every path overridable from the session the way `castlevania.tdsh` allows; the header records the working sequence, its own deploy command, and the failure mode found below. It was built to TinyTang's contract rather than to taste: TinyTang's TDESK-009 has the desktop's icons in the user's Desktop folder and a right-click on a `.tdsh` offer Run, which opens the Terminal and runs `tdsh run "<file>"`, and tinydesk-shell's `docs/SCRIPTING.md` is the language, which is `if`/`else`/`endif` with no `&` and no arguments to a script. The first version carried an `fpga` probe between `tangload` and `ae350run`, copying `boot-cart.tdsh` and `castlevania.tdsh`, and that check can never pass on this core: the desk link sees TinyTang's frames only while the UART's link mode is set, because `fpga/tiny89_soc/exts_uart.sv` routes received bytes to the desk link only when CTRL bit 0 is set, and only the program sets it (`firmware/apps/tiemu_smoke/main.c:318`), never the boot ROM, so a core just tangloaded sits in loader mode and answers nothing. Measured on the board on 2026-10-16: `fpga` reported `core 84 answering on UART1 at 2000000 baud` for the desktop core, whose own program is already running, and `no answer on UART1 at 2000000 baud` for the Tiny89 core immediately after `tangload`. The script therefore returned at that gate and never ran the program, which left the fabric's colour bars on screen -- the diagnostic the video unit draws while its enable bit is clear, `video.sv` choosing the layer, else the bars while not enabled, else the picture -- and the keyboard dead, because the desk layer and the keyboard both need link mode, so no key could reach TinyDesk and F12 could not bring the layer back; that state cannot be left from the keyboard, and the header now says so, with a power cycle as the way out, since nothing here reflashes the FPGA. The gate was removed, because `ae350run` already waits for the boot ROM's own `TinyNES LOAD` and reports when it does not come, which is the check that matters here; the script was re-verified by running it on tinydesk-shell's own host port, put on the card at 4538 bytes with SHA-256 `3f3ce036c961800983cfd97aa9c0dffa4bf8b4d00fb32aa4316073422409f765`, and run on the board, where the calculator booted and the console carried heartbeats reading `VID=T89V`, `VBL` counting, and `KBDS=77` advancing as the user typed, with PC and LCD hash differing from entry 8's desktop values because the user was running calculations on it rather than sitting at the AMS desktop. The user reports running equations on it with the Bluetooth keyboard. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged, validated this sequential entry's six sections, prose, Status values and the log's nine-entry count, and confirmed that no settled entry was rewritten.
+
+#### Next Steps:
+
+Confirm the desktop path itself: the script that booted the calculator this cycle was started from the console by the agent, so the remaining check is a power cycle, `desktop`, and a right-click Run of `tiny89.tdsh` on the TinyDesk desktop, which reaches the same `tdsh run`. The console stays owned by `ae350run` for as long as the program runs, which is by design rather than a fault, and a power cycle is how it is given back. Entry 8's `AA` is still not explained, though this cycle's capture shows the heartbeats arriving as ordinary text while `ae350run` follows them, which is a lead; the launch still re-sends the program and the BIOS on every run; and entry 4's two open items stand, the video unit's `FRAMES` testbench disagreement and the four-level grayscale path still reporting `LCDMODE=1bit`. The keyboard mapping remains the next cycle the user named and is now the shortest path to a more usable calculator, with `ON`, `CLEAR` and the Shift-modified `PLUS` and `MULTIPLY` the gaps that matter most.
+
+#### Files Modified:
+
+- scripts/tiny89.tdsh
+
+#### Status:
+
+- Build: N/A
+- Deployment: PASS
+- User Test: PASS
+
+---
