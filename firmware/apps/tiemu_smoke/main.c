@@ -33,6 +33,11 @@
 
 #define FLASH_BYTES T89_BIOS_BYTES
 
+/* How much room to ask the loader for when a state is coming back.  A TI-89
+ * Titanium state is 256 KiB of RAM plus 544 bytes of ports and registers, so
+ * 1 MiB leaves room for the format to grow. */
+#define T89_STATE_MAX (1024u * 1024u)
+
 /* "TNR1" as the little-endian word the loader puts in front of a file it is
  * asked for, then the file's length: TinyNES's framing, which TinyTang's
  * ae350run uses to serve a file from the card. */
@@ -204,6 +209,41 @@ static void save_pace(void)
     }
 }
 
+/* The pause that covers one of the board's card writes.  The board fills a
+ * 512-byte buffer and files it, holding the CPU with interrupts masked; a byte
+ * that arrives during that window is lost, and the save's length still comes
+ * out exact because the board counts its payload down by the length it was
+ * given.  Sent at every chunk boundary, this pause is what makes those bytes
+ * arrive while the card is busy doing nothing else. */
+static void save_chunk_pace(void)
+{
+    const uint64_t until =
+        t89_cycles64() + (uint64_t)T89_SAVE_CHUNK_MS * (T89_CORE_HZ / 1000u);
+
+    fflush(stdout);
+    t89_wait_tx_idle();
+    while (t89_cycles64() < until) {
+    }
+}
+
+/* The settle that lets the board finish arming before payload arrives: it
+ * opens the temporary file and appends its arm line at exactly this moment,
+ * and every one of those card calls masks the CPU. */
+static void save_arm_pace(void)
+{
+    const uint64_t until =
+        t89_cycles64() + (uint64_t)T89_SAVE_ARM_MS * (T89_CORE_HZ / 1000u);
+
+    fflush(stdout);
+    t89_wait_tx_idle();
+    while (t89_cycles64() < until) {
+    }
+}
+
+/* The flash as this session found it: the save writes it only when the OS has
+ * changed it, so an ordinary session costs one RAM save. */
+static uint32_t s_flash_boot_crc;
+
 /*
  * Hand the calculator's RAM to the board, which writes it beside the other
  * saves on the card.  This is TinyNES's NVRAM protocol: a line naming the
@@ -233,11 +273,14 @@ static void save_ram(void)
      * link loses a chunk, and on 2026-10-14 TinyNES's own header arrived as
      * "TinyNES N", which armed no save at all.  Warm the link first. */
     for (lead = 0; lead < 3; lead++) {
-        printf("TinyNES NVRAM BEGIN\n");
+        printf("Tiny89 NVRAM BEGIN\n");
         save_pace();
     }
 
-#ifdef T89_SAVE_BINARY
+/* The bytes, by default: measured on 2026-10-23, a 4 MiB flash image went
+ * through this shape whole while 256 KiB of hex lost 302 bytes in the same
+ * session, so hex is the opt-in (make HEX=1) rather than the default. */
+#if !defined(T89_SAVE_HEX)
     /* The payload as the bytes themselves, which is TinyTang's `TinyNES NVRAM
      * DATA` shape and the only one that makes a 4 MiB flash practical: a frame
      * carries 128 bytes, so a pause a frame crosses 256 KiB in 16.6 s against
@@ -267,8 +310,8 @@ static void save_ram(void)
      * preserve it if that number is ever wanted from a failure. */
     uint32_t sent = 0;
 
-    printf("TinyNES NVRAM DATA %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
-    save_pace();
+    printf("Tiny89 NVRAM DATA %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
+    save_arm_pace();
 
     /* No warm-up of its own, and not through stdio.  After the header every
      * byte is payload, so an empty line would shift the lot; and `_write()`
@@ -282,6 +325,11 @@ static void save_ram(void)
         t89_put_char((char)byte);
         if ((offset + 1u) % frame == 0u) {
             save_pace();
+            /* The board files its buffer at this boundary, so this is where
+             * the pause has to cover the card. */
+            if ((offset + 1u) % T89_SAVE_CHUNK_BYTES == 0u) {
+                save_chunk_pace();
+            }
         }
     }
     t89_wait_tx_idle();
@@ -291,7 +339,7 @@ static void save_ram(void)
            sent == crc ? "the bytes sent are the bytes hashed"
                        : "THE RAM MOVED UNDER THE READ");
 #else
-    printf("TinyNES NVRAM SAVE %lu %08" PRIx32 "%s\n", (unsigned long)bytes,
+    printf("Tiny89 NVRAM SAVE %lu %08" PRIx32 "%s\n", (unsigned long)bytes,
            crc, t89_save_is_blank(tihw.ram, bytes) ? " BLANK" : "");
     save_pace();
 
@@ -323,7 +371,7 @@ static void save_ram(void)
     }
 #endif
 
-    printf("TinyNES NVRAM DONE %08" PRIx32 "\n", crc);
+    printf("Tiny89 NVRAM DONE %08" PRIx32 "\n", crc);
     t89_wait_tx_idle();
     save_pace();
     /* SENT, not SAVED: this end can see what it transmitted and nothing else.
@@ -333,6 +381,268 @@ static void save_ram(void)
            crc, (unsigned long)((t89_cycles64() - started) /
                                 (T89_CORE_HZ / 1000u)),
            t89_save_is_blank(tihw.ram, bytes) ? " BLANK" : "");
+}
+
+/*
+ * Hand the calculator's flash to the board, when it differs from what this
+ * session started with.  It is 4 MiB, so it travels as bytes rather than hex
+ * -- 128 to a frame, which is minutes rather than the hours hex would take --
+ * and the board checks the length and CRC-32 and throws the file away if they
+ * disagree, so a save lost in the link costs the attempt and nothing else.
+ * Nothing here runs unless the flash actually changed: an ordinary session
+ * that only sets variables writes the 256 KiB RAM and stops.
+ */
+static void save_flash(void)
+{
+    const size_t bytes = (size_t)tihw.rom_size;
+    const uint32_t crc = t89_save_crc32(0, tihw.rom, bytes);
+    size_t offset;
+    int lead;
+
+    t89_dcache_wbinval();
+    for (lead = 0; lead < 3; lead++) {
+        printf("Tiny89 FLASH BEGIN\n");
+        save_pace();
+    }
+    printf("Tiny89 FLASH DATA %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
+    save_arm_pace();
+    for (offset = 0; offset < bytes; offset++) {
+        t89_put_char((char)tihw.rom[offset]);
+        if ((offset + 1u) % 128u == 0u) {
+            save_pace();
+            if ((offset + 1u) % T89_SAVE_CHUNK_BYTES == 0u) {
+                save_chunk_pace();
+            }
+        }
+    }
+    t89_wait_tx_idle();
+    save_pace();
+    printf("Tiny89 FLASH SENT %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
+    fflush(stdout);
+}
+
+/*
+ * The whole machine, the way TiEmu's own state file keeps it.
+ *
+ * core/state.c's ti68k_state_save writes six things and ti68k_state_load puts
+ * all six back: the register file (`regs`), the I/O ports, RAM, the pieces of
+ * Ti68kHardware that are state rather than layout, and the flash blocks that
+ * differ from the image.  Restoring RAM alone is not a state: the machine is
+ * then still at its reset vector, so the calculator boots -- and a boot that
+ * finds no valid system state re-initialises the very thing the save was for.
+ * That is why a restored RAM came back with an empty variable list.
+ *
+ * The flash is not duplicated here: the card already carries the 4 MiB image
+ * and it is restored by its own channel, so this blob is registers, ports, RAM
+ * and the hardware fields.
+ */
+#define T89_STATE_MAGIC 0x53393854u     /* "T89S" */
+#define T89_STATE_VERSION 2u
+
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t regs_size;
+    uint32_t io_size;
+    uint32_t io2_size;
+    uint32_t io3_size;
+    uint32_t ram_size;
+    uint32_t extras_size;
+} state_header_t;
+
+/* Ti68kHardware's state fields, the ones ti68k_state_load copies deliberately:
+ * the pointers and sizes around them are layout and are rebuilt by hw_init. */
+typedef struct {
+    uint32_t lcd_adr;
+    int32_t contrast;
+    int32_t on_off;
+    int32_t protect;
+    uint32_t archive_limit;
+    int32_t ram_exec[64];
+    uint8_t timer_value;
+    uint8_t timer_init;
+    uint8_t rtc_value;
+    uint8_t pad;
+    /* The live program counter.  regs.pc is not it: UAE keeps pc at the last
+     * m68k_setpc and lets pc_p advance through the instruction, so the true
+     * address is m68k_getpc() and resuming from regs.pc replays instructions
+     * -- with their side effects.  Saved here because the pointer difference
+     * that makes m68k_getpc() work is meaningless once the state leaves
+     * memory. */
+    uint32_t pc;
+} state_extras_t;
+
+/* The bytes of the payload, paced exactly as the RAM save is: the board files
+ * the stream 512 bytes at a time and the pause at each boundary is what keeps
+ * arriving bytes out of its masked card writes. */
+static void stream_bytes(const uint8_t *data, size_t bytes)
+{
+    size_t offset;
+
+    for (offset = 0; offset < bytes; offset++) {
+        t89_put_char((char)data[offset]);
+        if ((offset + 1u) % 128u == 0u) {
+            save_pace();
+            if ((offset + 1u) % T89_SAVE_CHUNK_BYTES == 0u) {
+                save_chunk_pace();
+            }
+        }
+    }
+    t89_wait_tx_idle();
+    save_pace();
+}
+
+/* Hand the board the machine.  On the card it is
+ * /root/states/ti89/<image>.state, the channel TinyNES's save states use. */
+static void save_state(void)
+{
+    const size_t bytes = sizeof(state_header_t) + sizeof(regs) +
+                         (size_t)tihw.io_size + (size_t)tihw.io2_size +
+                         (size_t)tihw.io3_size + (size_t)tihw.ram_size +
+                         sizeof(state_extras_t);
+    uint8_t *blob;
+    state_header_t header;
+    state_extras_t extras;
+    uint8_t *p;
+    uint32_t crc;
+    int lead;
+
+    blob = malloc(bytes);
+    if (blob == NULL) {
+        printf("BAD Tiny89 state allocation\n");
+        return;
+    }
+
+    memset(&extras, 0, sizeof extras);
+    extras.lcd_adr = tihw.lcd_adr;
+    extras.contrast = tihw.contrast;
+    extras.on_off = tihw.on_off;
+    extras.protect = tihw.protect;
+    extras.archive_limit = tihw.archive_limit;
+    memcpy(extras.ram_exec, tihw.ram_exec, sizeof extras.ram_exec);
+    extras.timer_value = tihw.timer_value;
+    extras.timer_init = tihw.timer_init;
+    extras.rtc_value = tihw.rtc_value;
+    extras.pc = m68k_getpc();
+
+    header.magic = T89_STATE_MAGIC;
+    header.version = T89_STATE_VERSION;
+    header.regs_size = (uint32_t)sizeof(regs);
+    header.io_size = (uint32_t)tihw.io_size;
+    header.io2_size = (uint32_t)tihw.io2_size;
+    header.io3_size = (uint32_t)tihw.io3_size;
+    header.ram_size = (uint32_t)tihw.ram_size;
+    header.extras_size = (uint32_t)sizeof extras;
+
+    /* The CPU wrote RAM and ports through the D-cache: write them back before
+     * they are copied (tinynes.h, and TinyNES does the same before a save). */
+    t89_dcache_wbinval();
+
+    p = blob;
+    memcpy(p, &header, sizeof header); p += sizeof header;
+    memcpy(p, &regs, sizeof regs); p += sizeof regs;
+    memcpy(p, tihw.io, (size_t)tihw.io_size); p += tihw.io_size;
+    memcpy(p, tihw.io2, (size_t)tihw.io2_size); p += tihw.io2_size;
+    memcpy(p, tihw.io3, (size_t)tihw.io3_size); p += tihw.io3_size;
+    memcpy(p, tihw.ram, (size_t)tihw.ram_size); p += tihw.ram_size;
+    memcpy(p, &extras, sizeof extras);
+
+    crc = t89_save_crc32(0, blob, bytes);
+
+    /* Warm the link, as both other saves do: a burst's opening is where it
+     * loses a chunk, and a lost header arms nothing at all. */
+    for (lead = 0; lead < 3; lead++) {
+        printf("Tiny89 STATE BEGIN\n");
+        save_pace();
+    }
+    printf("Tiny89 STATE DATA %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
+    save_arm_pace();
+    stream_bytes(blob, bytes);
+    free(blob);
+
+    printf("Tiny89 STATE SENT %lu %08" PRIx32 "\n", (unsigned long)bytes, crc);
+    fflush(stdout);
+}
+
+/* Put the machine back and let the CPU continue where it left off, which is
+ * what makes this a save state rather than a memory image: ti68k_state_load's
+ * own ending, m68k_setpc(m68k_getpc()); MakeFromSR(), is the same three lines
+ * core/uae/newcpu.c keeps behind its STATE_RESTORE branch.  Returns false when
+ * the card has no state for this image, so the caller falls back to RAM. */
+static int restore_state(void)
+{
+    uint8_t *blob = malloc(T89_STATE_MAX);
+    const state_header_t *header;
+    const uint8_t *p;
+    state_extras_t extras;
+    int have_extras = 0;
+    uint32_t got = 0;
+    int tenth;
+
+    if (blob == NULL) {
+        printf("BAD Tiny89 state allocation\n");
+        return 0;
+    }
+    printf("Tiny89 STATE WANT %08" PRIx32 " %08" PRIx32 "\n",
+           (uint32_t)(uintptr_t)blob, (uint32_t)T89_STATE_MAX);
+    fflush(stdout);
+    tn_load_reset();
+    for (tenth = 0; tenth < 30 && got == 0; tenth++) {
+        got = tn_load_poll(TN_CORE_HZ / 10);
+    }
+    if (got != (uint32_t)(uintptr_t)blob) {
+        printf("Tiny89 STATE none yet\n");
+        free(blob);
+        return 0;
+    }
+
+    header = (const state_header_t *)blob;
+    if (header->magic != T89_STATE_MAGIC ||
+        header->version != T89_STATE_VERSION ||
+        header->regs_size != (uint32_t)sizeof(regs) ||
+        header->io_size != (uint32_t)tihw.io_size ||
+        header->io2_size != (uint32_t)tihw.io2_size ||
+        header->io3_size != (uint32_t)tihw.io3_size ||
+        header->ram_size != (uint32_t)tihw.ram_size) {
+        /* A state from another build or another calculator: RAM is still
+         * worth having, and the caller asks for it next. */
+        printf("Tiny89 STATE mismatch\n");
+        free(blob);
+        return 0;
+    }
+
+    p = blob + sizeof *header;
+    memcpy(&regs, p, sizeof regs); p += sizeof regs;
+    memcpy(tihw.io, p, (size_t)tihw.io_size); p += tihw.io_size;
+    memcpy(tihw.io2, p, (size_t)tihw.io2_size); p += tihw.io2_size;
+    memcpy(tihw.io3, p, (size_t)tihw.io3_size); p += tihw.io3_size;
+    memcpy(tihw.ram, p, (size_t)tihw.ram_size); p += tihw.ram_size;
+    if (header->extras_size == (uint32_t)sizeof extras) {
+        memcpy(&extras, p, sizeof extras);
+        tihw.lcd_adr = extras.lcd_adr;
+        tihw.contrast = extras.contrast;
+        tihw.on_off = extras.on_off;
+        tihw.protect = extras.protect;
+        tihw.archive_limit = extras.archive_limit;
+        memcpy(tihw.ram_exec, extras.ram_exec, sizeof tihw.ram_exec);
+        tihw.timer_value = extras.timer_value;
+        tihw.timer_init = extras.timer_init;
+        tihw.rtc_value = extras.rtc_value;
+        have_extras = 1;
+    }
+    free(blob);
+
+    /* Resume where the machine was, not where its last setpc left it.  This is
+     * ti68k_state_load's own ending (core/state.c): the saved PC, then the
+     * status register's flags and interrupt mask.  The stack pointer needs no
+     * help -- regs.regs[15] came back with the rest of the register file, and
+     * MakeFromSR only swaps usp/isp when the privilege bit moved, which it did
+     * not.  (core/uae/newcpu.c keeps an isp/usp assignment behind #if 0; it is
+     * disabled because it overwrites a live SP with a stale one.) */
+    m68k_setpc(have_extras ? extras.pc : regs.pc);
+    MakeFromSR();
+    printf("Tiny89 STATE resumed PC=%08" PRIx32 "\n", (uint32_t)regs.pc);
+    return 1;
 }
 
 #ifdef T89_DIAG
@@ -358,6 +668,53 @@ static void diag_line(const char *when)
            t89_save_crc32(0, tihw.ram, (size_t)tihw.ram_size),
            t89_save_crc32(0, tihw.rom, (size_t)tihw.rom_size));
 }
+
+/* A CRC says the RAM changed, not whether it was rewritten: the calculator
+ * updates its own RAM every second, so any two readings differ.  What a cold
+ * boot looks like is the restored bytes *gone*, so this keeps the image as it
+ * arrived and counts, at READY, how much of it is still there and how much of
+ * the memory is now zero or 0xFF -- the two patterns a memory clear leaves. */
+static uint8_t *s_ram_before;
+
+static void diag_snapshot(void)
+{
+    const size_t bytes = (size_t)tihw.ram_size;
+
+    if (s_ram_before != NULL) {
+        return;
+    }
+    s_ram_before = malloc(bytes);
+    if (s_ram_before != NULL) {
+        memcpy(s_ram_before, tihw.ram, bytes);
+    }
+}
+
+static void diag_survival(const char *when)
+{
+    const size_t bytes = (size_t)tihw.ram_size;
+    size_t same = 0;
+    size_t zeros = 0;
+    size_t ones = 0;
+
+    if (s_ram_before == NULL) {
+        printf("Tiny89 DIAG SURVIVAL %s no snapshot\n", when);
+        return;
+    }
+    t89_dcache_wbinval();
+    for (size_t i = 0; i < bytes; i++) {
+        if (tihw.ram[i] == s_ram_before[i]) {
+            same++;
+        }
+        if (tihw.ram[i] == 0x00) {
+            zeros++;
+        } else if (tihw.ram[i] == 0xff) {
+            ones++;
+        }
+    }
+    printf("Tiny89 DIAG SURVIVAL %s %lu of %lu as restored, %lu zero, %lu ff\n",
+           when, (unsigned long)same, (unsigned long)bytes,
+           (unsigned long)zeros, (unsigned long)ones);
+}
 #endif
 
 int main(void)
@@ -371,6 +728,9 @@ int main(void)
     uint8_t last_sequence = 0;
     unsigned buffer = 0;
     int gray, ready_printed = 0, command;
+#ifdef T89_AUTOSAVE
+    int s_autosaved = 0;
+#endif
 
     printf("Tiny89 AE350 TiEmu smoke start\n");
 
@@ -387,7 +747,7 @@ int main(void)
         return 1;
     }
 
-    printf("TinyNES WANT %08lx %08lx\n", (unsigned long)(uintptr_t)upgrade,
+    printf("Tiny89 WANT %08lx %08lx\n", (unsigned long)(uintptr_t)upgrade,
            (unsigned long)(T89_BIOS_MAX + 8));
     fflush(stdout);
     tn_load_reset();
@@ -447,18 +807,27 @@ int main(void)
         tihw.initial_ssp, tihw.initial_pc);
 
     /*
-     * The calculator's RAM, if a previous session left one on the card.  The
-     * board serves a save headerless straight into the buffer named here and
-     * the loader's own block checksums judge it, so the file lands in tihw.ram
-     * the way a battery-backed calculator's RAM is found at power-up.  A first
-     * boot has no file, ae350run says so, and the zeroed RAM TiEmu allocated
-     * is what the OS then cold-starts on.
+     * The whole machine first: if a state came back, the calculator resumes
+     * where it was saved and never runs its boot at all.  That is the
+     * difference between a save state and a RAM image -- a machine left at its
+     * reset vector boots, and a boot rebuilds the state the save was for.
+     */
+    if (restore_state()) {
+        printf("Tiny89 RESUMED\n");
+    } else {
+    /*
+     * Otherwise the calculator's RAM, if a previous session left one on the
+     * card.  The board serves a save headerless straight into the buffer named
+     * here and the loader's own block checksums judge it, so the file lands in
+     * tihw.ram the way a battery-backed calculator's RAM is found at power-up.
+     * A first boot has no file, ae350run says so, and the zeroed RAM TiEmu
+     * allocated is what the OS then cold-starts on.
      *
      * The request goes out now, while the UART is still in loader mode: once
      * TinyNES LINK is printed the line carries text frames and cannot ask for
      * a file any more.
      */
-    printf("TinyNES NVRAM WANT %08" PRIx32 " %08" PRIx32 "\n",
+    printf("Tiny89 NVRAM WANT %08" PRIx32 " %08" PRIx32 "\n",
            (uint32_t)(uintptr_t)tihw.ram, (uint32_t)tihw.ram_size);
     fflush(stdout);
     tn_load_reset();
@@ -477,10 +846,40 @@ int main(void)
             printf("Tiny89 RAM none yet\n");
         }
     }
+    }
+    /*
+     * The calculator's flash, if a previous session left one.  The OS keeps
+     * its installation and its apps there, and a freshly converted flash
+     * under a restored RAM is what sends the calculator into its first-boot
+     * installation; the two halves have to come back together, so the flash
+     * is asked for by the same protocol into TiEmu's own rom buffer.
+     */
+    printf("Tiny89 FLASH WANT %08" PRIx32 " %08" PRIx32 "\n",
+           (uint32_t)(uintptr_t)tihw.rom, (uint32_t)tihw.rom_size);
+    fflush(stdout);
+    tn_load_reset();
+    {
+        uint32_t got = 0;
+        int tenth;
+
+        for (tenth = 0; tenth < 300 && got == 0; tenth++) {
+            got = tn_load_poll(TN_CORE_HZ / 10);
+        }
+        if (got == (uint32_t)(uintptr_t)tihw.rom) {
+            printf("Tiny89 FLASH GOT %lu %08" PRIx32 "\n",
+                   (unsigned long)tihw.rom_size,
+                   t89_save_crc32(0, tihw.rom, (size_t)tihw.rom_size));
+        } else {
+            printf("Tiny89 FLASH none yet\n");
+        }
+    }
+    s_flash_boot_crc = t89_save_crc32(0, tihw.rom, (size_t)tihw.rom_size);
+
 #ifdef T89_DIAG
     /* The reading before the calculator's own code has run at all: whatever
      * the save put there, and the flash as the converter built it. */
     diag_line("BEFORE");
+    diag_snapshot();
 #endif
 
     /*
@@ -550,7 +949,7 @@ int main(void)
      * exactly that line to start reading frames instead of text (TinyNES's
      * tools/load_ae350.py, which is also Tiny89's).  Nothing is printed after
      * this point but frames. */
-    printf("TinyNES LINK\n");
+    printf("Tiny89 LINK\n");
     T89_UART_CTRL = T89_UART_LINK_MODE;
     printf("Tiny89 KBD seq=%u\n", (unsigned)(T89_KBD_HI >> 24));
 
@@ -580,7 +979,16 @@ int main(void)
          * (t89_key.c maps nothing from a report that carries Control).  The
          * emulator stops for the length of the save. */
         if (command == T89_KBD_CMD_SAVE) {
-            save_ram();
+            /* The state carries the RAM, the registers, the ports and the
+             * hardware fields: the .ram file is the fallback for a card that
+             * has no state yet, not something to rewrite on every save. */
+            save_state();
+            if (t89_save_crc32(0, tihw.rom, (size_t)tihw.rom_size) !=
+                s_flash_boot_crc) {
+                save_flash();
+                s_flash_boot_crc = t89_save_crc32(0, tihw.rom,
+                                                  (size_t)tihw.rom_size);
+            }
         }
 
         /* (b3) Control and Alt with q ends the session and returns, so the
@@ -613,6 +1021,23 @@ int main(void)
                 stable = 0;
             }
 
+#ifdef T89_AUTOSAVE
+            /* Diagnostic only: save without a keypress, so the save path can
+             * be exercised from the console.  Not in any shipped build. */
+            if (!s_autosaved && ready_printed && presented >= 300) {
+                s_autosaved = 1;
+                printf("Tiny89 AUTOSAVE at frame %u\n", (unsigned)presented);
+                save_state();
+                printf("Tiny89 AUTOSAVED\n");
+                /* Leave the machine so the next launch is the one that
+                 * restores: a test of the whole cycle needs no keypress and
+                 * no power cycle between the two halves. */
+                printf("Tiny89 EXIT 0\n");
+                fflush(stdout);
+                return 0;
+            }
+#endif
+
             /* (d) The deployment tool waits for this string, so it is printed
              * exactly once, at whichever of the two conditions comes first. */
             if (!ready_printed &&
@@ -622,6 +1047,7 @@ int main(void)
                     (uint32_t)m68k_getpc(), hash);
 #ifdef T89_DIAG
                 diag_line("READY");
+                diag_survival("READY");
 #endif
             }
 

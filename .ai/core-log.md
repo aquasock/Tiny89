@@ -655,3 +655,35 @@ The RAM save still speaks TinyTang's TinyNES NVRAM protocol, so on the new card 
 - User Test: PASS
 
 ---
+
+## 19 COMMIT Unreleased 2026-10-24T01:12:40-07:00
+
+#### Coming From:
+
+Unreleased 1cd6b74
+
+#### Purpose:
+
+Make a saved calculator a save state in TiEmu's own shape, so a launch resumes the machine instead of booting it, and make the card transfer reliable enough to carry it.
+
+#### Outcome:
+
+A session now saves and restores the machine the way `core/state.c` does rather than a RAM image. `save_state()` builds a 263,316-byte blob in `main.c` holding `regs` (the UAE register file), `tihw.io`, `io2`, `io3`, RAM, the `Ti68kHardware` state fields TiEmu restores deliberately (`lcd_adr`, `contrast`, `on_off`, `protect`, `archive_limit`, `ram_exec`, the timer bytes) and one field TiEmu's file does not need: the live program counter from `m68k_getpc()`. It travels over the `STATE` channel TinyTang's firmware already served for TinyNES, to `/root/states/ti89/<image>.state`; the RAM save stays only as the fallback for a card with no state. `restore_state()` asks for it before the RAM, and when it is present restores every field and continues at the saved PC with `m68k_setpc(pc); MakeFromSR();` — no stack-pointer fixup, because the `isp`/`usp` assignment in `core/uae/newcpu.c` sits behind `#if 0` precisely because it overwrites a live SP with a stale one, and copying it produced the address error the user saw on the first resume. `regs.pc` was the second fault: UAE keeps it at the last `m68k_setpc` while `pc_p` walks the instruction, so resuming from it replays instructions; the true PC is `m68k_getpc()` and it is stored in the blob because the pointer difference that computes it is meaningless off the machine. The earlier diagnosis was completed on the way: `DIAG SURVIVAL` showed 254,689 of 262,144 restored bytes unchanged after boot with the OS rewriting about 7 KB, which ruled out a RAM wipe, and the state file proved the restore path byte-exact before any of this. Transport got two fixes. `T89_SAVE_ARM_MS` (400 ms) lands between the header and the first payload byte, because parsing the header is when TinyTang opens the `.part`, appends its arm line and opens the file, and each of those masks the CPU; with only the 8 ms line pause the opening bytes were lost on every attempt. `T89_SAVE_CHUNK_MS` rose from 20 to 30 after a save still came back short with every card write under 3 ms, and the accepted save that followed measured a `max 24 ms` write and verified whole. On the board: `arm …state: 263316 bytes, crc 96406c91`, `finish …: 263316 of 263316 bytes, crc 96406c91 of 96406c91, whole`, `card …: 515 writes, 343 ms in all, max 24 ms, 3 over 5 ms`, then a relaunch whose `want state: sent …state, 263316 bytes` resumed the calculator where it was. The user reported PASS: the calculator came back to the same screen, the stored variable was present and the cursor sat in the same position. A diagnostic path was added and left in the diagnostic build only: `AUTOSAVE=1` saves at frame 300 and exits, and the survival probe keeps its snapshot, both behind flags that the shipped build does not define. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 18 were not rewritten, and validated this entry as number 19 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The blob omits what TiEmu's file carries beyond memory: the RTC-3 `rtc3_beg`, `rtc3_load` and `rtc3_ref` times and the prefetch words `ir`/`irc`, and the user saw the calculator's date come back different, which is that omission. The `.ram` files beside the states are now stale and should either be dropped or refreshed deliberately, and TinyTang's Saves page still lists them beside the state it now also reports. The save itself remains one-way: a short transfer is only known from the board's log, so a state that fails to verify costs a retry the user has to notice.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/main.c
+- firmware/common/t89_save.h
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

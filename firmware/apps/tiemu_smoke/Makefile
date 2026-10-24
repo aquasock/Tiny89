@@ -48,6 +48,8 @@ CPPFLAGS   := -DNO_GDB -DNO_SOUND -D__inline__=inline -DSTATFS_NO_ARGS=2 \
               -I$(TIEMU_SRC)/core/dbg -I$(TIEMU_SRC)/misc
 APP_DEFS   := $(if $(filter 1,$(DIAG)),-DT89_DIAG)
 APP_DEFS   += $(if $(filter 1,$(BINARY)),-DT89_SAVE_BINARY)
+APP_DEFS   += $(if $(filter 1,$(HEX)),-DT89_SAVE_HEX)
+APP_DEFS   += $(if $(filter 1,$(AUTOSAVE)),-DT89_AUTOSAVE)
 CPPFLAGS   += $(APP_DEFS)
 CFLAGS     := $(COMMON) -std=gnu11
 ASFLAGS    := $(ARCH) -g

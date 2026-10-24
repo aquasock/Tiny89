@@ -55,6 +55,36 @@
  * and this goes back. */
 #define T89_SAVE_PACE_MS 8u
 
+/* The board files the payload 512 bytes at a time, and a card write holds the
+ * CPU with interrupts masked while it runs, so every byte that arrives during
+ * it is lost -- the BL616's UART receive FIFO is 32 bytes and its link ring is
+ * not being drained while the card has the core.  Measured on 2026-10-23: a
+ * save either arrived whole and verified, or arrived the right length with the
+ * wrong CRC, because the board counts its payload down by length and the
+ * program's own trailing text fills the missing bytes back up.
+ *
+ * So the pause is aligned to the board's chunk rather than to the frame: every
+ * T89_SAVE_CHUNK_BYTES the sender stops long enough for one card write to
+ * finish.  This costs about fifteen seconds on 256 KiB and is the whole point
+ * of the figure below. */
+#define T89_SAVE_CHUNK_BYTES 512u
+/* Thirty rather than twenty as of 2026-10-24: a 263 KB state save still came
+ * back short in one session out of three, with the card never holding the CPU
+ * longer than 3 ms, so the margin was not the card's write but where the write
+ * landed relative to the sender.  The cost over 256 KiB is about five seconds. */
+#define T89_SAVE_CHUNK_MS 30u
+
+/* The pause between the header line and the first payload byte.  Parsing the
+ * header is when the board does its card work -- it opens the .part, appends
+ * the arm line to last.log, opens the file -- and each of those holds the CPU
+ * with interrupts masked.  Measured on 2026-10-24: with only the 8 ms line
+ * pause here, a 263 KB state arrived the right length with the wrong CRC on
+ * every attempt, and the bytes lost were the ones sent while the board was
+ * opening the file.  Four hundred milliseconds is longer than the whole arm
+ * sequence takes and costs a third of a second on a save that takes twenty
+ * seconds. */
+#define T89_SAVE_ARM_MS 400u
+
 /* CRC-32 as ae350run checks it with (ae350_load.c's ae350_crc32): the
  * reflected CRC-32 of CRC-32/ISO-HDLC, which is zlib's and Ethernet's.  Start
  * at 0.  A save's CRC travels in its header line and again at the end, so a
