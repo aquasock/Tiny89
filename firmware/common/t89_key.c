@@ -104,6 +104,11 @@ static const t89_bind_t t89_shift_binds[] = {
 /* The usage that means save while Control is held: the s key, 0x16. */
 #define T89_CMD_SAVE_USAGE 0x16u
 
+/* Alt, either side, is the other half of the exit combination.  Like Control
+ * and Shift it is a modifier bit rather than a usage of its own. */
+#define T89_MOD_ALT 0x44u
+#define T89_CMD_EXIT_USAGE 0x14u        /* q */
+
 /* The keys the module last applied, so a report is a difference and a held
  * key is one press. */
 static unsigned char t89_applied[NB_MAX_KEYS];
@@ -133,10 +138,15 @@ int t89_kbd_shift_key(uint8_t usage)
 int t89_kbd_command(const t89_kbd_t *kbd)
 {
     int i;
+    int alt;
 
     if (!kbd || !(kbd->mods & T89_MOD_CTRL)) return T89_KBD_CMD_NONE;
+    /* Control with Alt is the exit, so a command cannot also type; plain
+     * Control with s remains the save. */
+    alt = (kbd->mods & T89_MOD_ALT) != 0;
     for (i = 0; i < T89_KBD_KEYS; i++) {
-        if (kbd->keys[i] == T89_CMD_SAVE_USAGE) return T89_KBD_CMD_SAVE;
+        if (!alt && kbd->keys[i] == T89_CMD_SAVE_USAGE) return T89_KBD_CMD_SAVE;
+        if (alt && kbd->keys[i] == T89_CMD_EXIT_USAGE) return T89_KBD_CMD_EXIT;
     }
     return T89_KBD_CMD_NONE;
 }

@@ -242,6 +242,24 @@ int main(void)
         c.mods = 0x02; c.keys[0] = 0x16;          /* Shift with s */
         check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
               "cmd: Shift with s is not a command");
+        c.mods = 0x05; c.keys[0] = 0x14;          /* Control and Alt with q */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_EXIT,
+              "cmd: Control and Alt with q is the exit");
+        c.mods = 0x50; c.keys[0] = 0x14;          /* RightControl, RightAlt */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_EXIT,
+              "cmd: either Alt bit with either Control bit does it");
+        c.mods = 0x44; c.keys[0] = 0x14;          /* both Alt bits, no Control */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
+              "cmd: Alt without Control is not the exit");
+        c.mods = 0x01; c.keys[0] = 0x14;          /* Control with q alone */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
+              "cmd: Control without Alt is not the exit");
+        c.mods = 0x04; c.keys[0] = 0x14;          /* Alt with q alone */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
+              "cmd: Alt without Control is not the exit");
+        c.mods = 0x05; c.keys[0] = 0x16;          /* Control and Alt with s */
+        check(t89_kbd_command(&c) == T89_KBD_CMD_NONE,
+              "cmd: Alt with Control and s is neither command");
         check(t89_kbd_command(NULL) == T89_KBD_CMD_NONE,
               "cmd: no report, no command");
     }

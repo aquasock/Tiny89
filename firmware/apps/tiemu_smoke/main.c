@@ -583,6 +583,15 @@ int main(void)
             save_ram();
         }
 
+        /* (b3) Control and Alt with q ends the session and returns, so the
+         * firmware that started it can put the desktop core back.  The result
+         * word is the clean return the loader counts as a run. */
+        if (command == T89_KBD_CMD_EXIT) {
+            printf("Tiny89 EXIT\n");
+            fflush(stdout);
+            return 0;
+        }
+
         /* (c) Present at the fabric's vertical blank: refresh the buffer that
          * is not being shown, write the D-cache back, then hand it over by
          * flipping CTRL's buffer bit. */

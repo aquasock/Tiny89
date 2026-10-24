@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "snapshot_sequence": 223,
+  "agents": [],
+  "coordination": {
+    "schema_version": 1,
+    "sequence": 14,
+    "decisions": [],
+    "write_claims": [
+      {
+        "claim": {
+          "owner": "agent_b9fe34e6",
+          "roots": [
+            "firmware/common",
+            "tests"
+          ],
+          "exact_files": [],
+          "contracts": []
+        },
+        "sequence": 1,
+        "isolated_worktree": false,
+        "present_at_claim": [
+          "firmware/common",
+          "tests"
+        ]
+      },
+      {
+        "claim": {
+          "owner": "agent_f69088f0",
+          "roots": [
+            "firmware/apps/tiemu_smoke",
+            "firmware/include"
+          ],
+          "exact_files": [],
+          "contracts": []
+        },
+        "sequence": 3,
+        "isolated_worktree": false,
+        "present_at_claim": [
+          "firmware/apps/tiemu_smoke",
+          "firmware/include"
+        ]
+      },
+      {
+        "claim": {
+          "owner": "agent_6bd87762",
+          "roots": [
+            "firmware/apps/tiemu_smoke",
+            "firmware/include"
+          ],
+          "exact_files": [],
+          "contracts": []
+        },
+        "sequence": 5,
+        "isolated_worktree": false,
+        "present_at_claim": [
+          "firmware/apps/tiemu_smoke",
+          "firmware/include"
+        ]
+      },
+      {
+        "claim": {
+          "owner": "agent_daee8964",
+          "roots": [
+            "build"
+          ],
+          "exact_files": [],
+          "contracts": []
+        },
+        "sequence": 7,
+        "isolated_worktree": false,
+        "present_at_claim": [
+          "build"
+        ]
+      },
+      {
+        "claim": {
+          "owner": "agent_e9084098",
+          "roots": [
+            "firmware/common",
+            "firmware/apps/tiemu_smoke",
+            "firmware/include",
+            "tests"
+          ],
+          "exact_files": [],
+          "contracts": []
+        },
+        "sequence": 9,
+        "isolated_worktree": true
+      },
+      {
+        "claim": {
+          "owner": "agent_d33682d2",
+          "roots": [
+            "fpga",
+            "firmware/boot",
+            "THIRD_PARTY.md",
+            "docs"
+          ],
+          "exact_files": [],
+          "contracts": []
+        },
+        "sequence": 11,
+        "isolated_worktree": true
+      },
+      {
+        "claim": {
+          "owner": "agent_9e2d9c1a",
+          "roots": [
+            "fpga/tiny89_soc",
+            "tests",
+            "tools",
+            "build"
+          ],
+          "exact_files": [],
+          "contracts": []
+        },
+        "sequence": 13,
+        "isolated_worktree": false,
+        "present_at_claim": [
+          "fpga/tiny89_soc",
+          "tests",
+          "tools",
+          "build"
+        ]
+      }
+    ],
+    "reconciliations": [],
+    "projections": [
+      {
+        "child_id": "agent_b9fe34e6",
+        "decision_ids": [],
+        "projected_bytes": 0,
+        "deduplicated": 0,
+        "omitted": 0,
+        "sequence": 2
+      },
+      {
+        "child_id": "agent_f69088f0",
+        "decision_ids": [],
+        "projected_bytes": 0,
+        "deduplicated": 0,
+        "omitted": 0,
+        "sequence": 4
+      },
+      {
+        "child_id": "agent_6bd87762",
+        "decision_ids": [],
+        "projected_bytes": 0,
+        "deduplicated": 0,
+        "omitted": 0,
+        "sequence": 6
+      },
+      {
+        "child_id": "agent_daee8964",
+        "decision_ids": [],
+        "projected_bytes": 0,
+        "deduplicated": 0,
+        "omitted": 0,
+        "sequence": 8
+      },
+      {
+        "child_id": "agent_e9084098",
+        "decision_ids": [],
+        "projected_bytes": 0,
+        "deduplicated": 0,
+        "omitted": 0,
+        "sequence": 10
+      },
+      {
+        "child_id": "agent_d33682d2",
+        "decision_ids": [],
+        "projected_bytes": 0,
+        "deduplicated": 0,
+        "omitted": 0,
+        "sequence": 12
+      },
+      {
+        "child_id": "agent_9e2d9c1a",
+        "decision_ids": [],
+        "projected_bytes": 0,
+        "deduplicated": 0,
+        "omitted": 0,
+        "sequence": 14
+      }
+    ],
+    "contentions": []
+  }
+}

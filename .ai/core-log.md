@@ -622,3 +622,36 @@ Find the eighteen bytes. They are lost at a byte payload's opening, they shift e
 - User Test: PASS
 
 ---
+
+## 18 COMMIT Unreleased 2026-10-23T20:33:28-07:00
+
+#### Coming From:
+
+Unreleased cc05013
+
+#### Purpose:
+
+Give the player an exit so a session started from TinyTang's new window can end and the firmware can put the desktop core back, as the two game players already do.
+
+#### Outcome:
+
+The session had no way out: it ran until the board was reset, which is right for a diagnostic and wrong for a window. `firmware/common/t89_key.c` now recognises Control with Alt and the q usage as a command, `T89_KBD_CMD_EXIT`, beside the existing Control with s for the save; Alt is the modifier bits `0x44` and Control `0x11`, so either side of either key works, and a report carrying Alt no longer reads as the save, because the save check now requires Control without Alt. `firmware/apps/tiemu_smoke/main.c` handles the command by printing `Tiny89 EXIT` and returning 0, which is the clean return the loader counts as a finished run; the firmware's `ae350run` therefore reports the program rather than leaving it running, and TinyTang reloads the desktop core. `tests/test_t89_key.c` gained six checks — the exit with the left bits and with the right bits, Control with q alone and Alt with q alone as nothing, Control with Alt and s as neither command, and both Alt bits without Control as nothing — and `tests/run_t89_key_test.sh` passed 152 checks, up from 146. One check first failed for a mistake in the test rather than the code: the right-hand combination was written `0x44`, which is both Alt bits with no Control, where RightControl with RightAlt is `0x50`. The player rebuilt to 5,657,172 bytes, SHA-256 `52b77b39…`, and was deployed by TinyTang to `/root/ae350/tiny89-play.elf`; the core went to `/root/cores/console138k/tiny89.bin` with its `.fs.gz` and the OS image to `/root/media/ti89/TI89Titanium_OS.89u`. The user opened TinyTang's Tiny89 window, launched the session and reported PASS for all of it: the image listed, the calculator booted on HDMI after the long player stream, the Bluetooth keyboard typed on it, F12 swapped between TinyDesk and the calculator, and Control with Alt and q returned to the desktop. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was not changed and entries 1 to 17 were not rewritten, and validated this entry as number 18 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+The RAM save still speaks TinyTang's TinyNES NVRAM protocol, so on the new card it would land in `/root/saves/nes` rather than a TI-89 folder; naming the product in the save protocol and giving TinyTang a per-system save folder is the next small cycle, and it should come with the 18-byte transport loss entry 17 left open, since that is what a 4 MiB flash write depends on. The four-level grayscale remains undemonstrated because TiEmu's plane model reports one plane on the AMS desktop, and the session still runs headless of any calculator-link transfer.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/main.c
+- firmware/common/t89_key.c
+- firmware/common/t89_key.h
+- tests/test_t89_key.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

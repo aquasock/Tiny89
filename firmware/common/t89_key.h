@@ -54,6 +54,7 @@ int t89_kbd_shift_key(uint8_t usage);
  * command cannot also type. */
 #define T89_KBD_CMD_NONE 0
 #define T89_KBD_CMD_SAVE 1 /* Control with the s key: hand the RAM to the card */
+#define T89_KBD_CMD_EXIT 2 /* Control and Alt with the q key: end the session */
 int t89_kbd_command(const t89_kbd_t *kbd);
 
 /* The keyboard as the calculator sees it: the set of keys the report implies,
