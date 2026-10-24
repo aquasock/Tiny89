@@ -50,6 +50,8 @@ APP_DEFS   := $(if $(filter 1,$(DIAG)),-DT89_DIAG)
 APP_DEFS   += $(if $(filter 1,$(BINARY)),-DT89_SAVE_BINARY)
 APP_DEFS   += $(if $(filter 1,$(HEX)),-DT89_SAVE_HEX)
 APP_DEFS   += $(if $(filter 1,$(AUTOSAVE)),-DT89_AUTOSAVE)
+APP_DEFS   += $(if $(filter 1,$(LINKTRACE)),-DT89_LINK_TRACE)
+APP_DEFS   += $(if $(filter 1,$(LINKSEND)),-DT89_LINKSEND)
 CPPFLAGS   += $(APP_DEFS)
 CFLAGS     := $(COMMON) -std=gnu11
 ASFLAGS    := $(ARCH) -g
@@ -85,10 +87,14 @@ T89_KEY_SOURCE := $(ROOT)/firmware/common/t89_key.c
 T89_SAVE_SOURCE := $(ROOT)/firmware/common/t89_save.c
 T89_LCD_SOURCES := $(ROOT)/firmware/common/t89_lcd.c \
                    $(ROOT)/firmware/common/t89_lcd_gray.c
+T89_LINK_SOURCE := $(ROOT)/firmware/common/t89_link.c
+T89_PROTO_SOURCE := $(ROOT)/firmware/common/t89_proto.c
+T89_FILE_SOURCE := $(ROOT)/firmware/common/t89_file.c
 APP_SOURCES := main.c $(ROOT)/firmware/boot/load.c \
                $(ROOT)/firmware/boot/support/uart.c \
                $(ROOT)/firmware/common/t89_bios.c \
-               $(T89_KEY_SOURCE) $(T89_SAVE_SOURCE) $(T89_LCD_SOURCES)
+               $(T89_KEY_SOURCE) $(T89_SAVE_SOURCE) $(T89_LCD_SOURCES) \
+               $(T89_LINK_SOURCE) $(T89_PROTO_SOURCE) $(T89_FILE_SOURCE)
 
 core_object = $(BUILD)/obj/core/$(notdir $(1)).o
 rt_object   = $(BUILD)/obj/rt/$(notdir $(1)).o
@@ -127,6 +133,9 @@ $(eval $(call compile_c,$(call app_object,$(ROOT)/firmware/common/t89_bios.c),$(
 $(eval $(call compile_c,$(call app_object,$(T89_KEY_SOURCE)),$(T89_KEY_SOURCE)))
 $(foreach source,$(T89_LCD_SOURCES),$(eval $(call compile_c,$(call app_object,$(source)),$(source))))
 $(eval $(call compile_c,$(call app_object,$(T89_SAVE_SOURCE)),$(T89_SAVE_SOURCE)))
+$(eval $(call compile_c,$(call app_object,$(T89_LINK_SOURCE)),$(T89_LINK_SOURCE)))
+$(eval $(call compile_c,$(call app_object,$(T89_PROTO_SOURCE)),$(T89_PROTO_SOURCE)))
+$(eval $(call compile_c,$(call app_object,$(T89_FILE_SOURCE)),$(T89_FILE_SOURCE)))
 
 # DIAG changes a define and nothing else, so main.c's object would otherwise
 # survive a change to it: the options are kept in a file that is rewritten

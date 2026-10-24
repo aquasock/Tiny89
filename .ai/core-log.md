@@ -687,3 +687,41 @@ The blob omits what TiEmu's file carries beyond memory: the RTC-3 `rtc3_beg`, `r
 - User Test: PASS
 
 ---
+
+## 20 COMMIT Unreleased 2026-10-24T03:10:00-07:00
+
+#### Coming From:
+
+Unreleased 6016050
+
+#### Purpose:
+
+Give the calculator a link port it can talk over and teach Tiny89 to hand it a file, so software no longer has to be built into the flash image.
+
+#### Outcome:
+
+`firmware/common/t89_link.c` models the port: open-collector wires via `ticables_cable_set_d0/d1/get_d0/d1` and a byte queue each way behind the four hooks `ti_hw/dbus.c` would install, with the `0x0d` status bits maintained. `firmware/common/t89_proto.c` is the sender: `[target][cmd][len_lo][len_hi][data][sum]` framing, RTS/CTS/XDP/ACK/EOT from libticalcs' `dbus_pkt.h`, ids 0x08/0x98, and the eight-step exchange `send_var()` performs, with the data packet streamed in two pieces so any file size travels. `firmware/common/t89_file.c` parses both containers -- the `**TIFL**` flash file (name at 17, type at 49, length at 74) and the regular 68k variable file (name at 64, type at 72, length at 76, payload at 0x52) -- each deriving its own length and proving it with the trailing sum; a host harness parsed all 62 files of the user's 2021 backup with no failures. On the board, `ZZZ` (type 0x05, three bytes) was accepted on the first attempt, every step acknowledged, and appeared in VAR-LINK: the port, framing, checksums and ids are right. The real 21,971-byte `TINOTES.89k` then failed as 0x24 and again as the archived type 0x27 -- `RTS/ACK: no answer` and a link-transmission error on the calculator -- so an application's RTS header is still wrong in a way the three-byte probe could not reveal. A retry guard stops after one attempt, since each retry landed back in the error dialog. The trigger was wrong twice and fixed: the send block had landed in `main()`'s declarations rather than the run loop, and the data packet was built in a 1 KiB buffer. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the `.ai/` diff, confirmed `.ai/core.md` unchanged and entries 1 to 19 not rewritten, and validated this entry as number 20 of 100 with six sections, prose, allowed Status values and eligible paths only.
+
+#### Next Steps:
+
+Find what the calculator objects to in an application's RTS, with `LINKSEND=1 LINKTRACE=1` printing every byte it returns: no bytes means the header is wrong (compare `ti89_send_RTS`), ERR/SKP with a code means a real refusal (archive space is the likeliest at 22 KB), and malformed bytes mean the receive framing. Then the Link tab: a folder of files, a Send button, and the restart-based launch that lands on the saved Receive state.
+
+#### Files Modified:
+
+- firmware/apps/tiemu_smoke/Makefile
+- firmware/apps/tiemu_smoke/main.c
+- firmware/common/t89_file.c
+- firmware/common/t89_link.c
+- firmware/common/t89_proto.c
+- firmware/include/t89_file.h
+- firmware/include/t89_link.h
+- firmware/include/t89_proto.h
+- src/port/ticables.h
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: FAIL
+
+---

@@ -27,6 +27,9 @@
 #include "t89_bios.h"
 #include "t89_lcd.h"
 #include "t89_key.h"
+#include "t89_file.h"
+#include "t89_link.h"
+#include "t89_proto.h"
 #include "t89_save.h"
 #include "tiny89_platform.h"
 #include "ti68k_def.h"
@@ -37,6 +40,10 @@
  * Titanium state is 256 KiB of RAM plus 544 bytes of ports and registers, so
  * 1 MiB leaves room for the format to grow. */
 #define T89_STATE_MAX (1024u * 1024u)
+
+/* A file to hand the calculator over its link, when the board was given one.
+ * The largest app in the user's set is 582 KB, so a megabyte holds any. */
+#define T89_SEND_MAX (1024u * 1024u)
 
 /* "TNR1" as the little-endian word the loader puts in front of a file it is
  * asked for, then the file's length: TinyNES's framing, which TinyTang's
@@ -243,6 +250,14 @@ static void save_arm_pace(void)
 /* The flash as this session found it: the save writes it only when the OS has
  * changed it, so an ordinary session costs one RAM save. */
 static uint32_t s_flash_boot_crc;
+
+/* The file to hand the calculator, and whether it has gone yet. */
+static uint8_t *s_send_blob;
+static t89_var_t s_send_var;
+static int s_send_done;
+static uint32_t s_send_last_try;
+static unsigned s_send_tries;
+static unsigned s_send_ticks;
 
 /*
  * Hand the calculator's RAM to the board, which writes it beside the other
@@ -731,6 +746,12 @@ int main(void)
 #ifdef T89_AUTOSAVE
     int s_autosaved = 0;
 #endif
+#ifdef T89_LINK_TRACE
+    uint32_t last_link_report = 0;
+#endif
+#ifdef T89_LINKSEND
+    uint32_t s_link_tries = 0;
+#endif
 
     printf("Tiny89 AE350 TiEmu smoke start\n");
 
@@ -803,6 +824,9 @@ int main(void)
         printf("BAD Tiny89 hardware initialization\n");
         return 1;
     }
+    /* The link port's wires and byte registers become real here; without this
+     * the calculator's Link app drives stubs and no byte can cross. */
+    t89_link_install();
     printf("Tiny89 BOOT SSP=%08" PRIx32 " PC=%08" PRIx32 "\n",
         tihw.initial_ssp, tihw.initial_pc);
 
@@ -847,6 +871,37 @@ int main(void)
         }
     }
     }
+    /*
+     * The file the board was asked to hand the calculator: asked for here,
+     * while the UART is still in loader mode, and sent later once the machine
+     * is running and the calculator's Link screen is listening.
+     */
+    s_send_blob = malloc(T89_SEND_MAX);
+    if (s_send_blob != NULL) {
+        uint32_t got = 0;
+        int tenth;
+
+        printf("Tiny89 SEND WANT %08" PRIx32 " %08" PRIx32 "\n",
+               (uint32_t)(uintptr_t)s_send_blob, (uint32_t)T89_SEND_MAX);
+        fflush(stdout);
+        tn_load_reset();
+        for (tenth = 0; tenth < 30 && got == 0; tenth++) {
+            got = tn_load_poll(TN_CORE_HZ / 10);
+        }
+        if (got == (uint32_t)(uintptr_t)s_send_blob) {
+            if (t89_file_parse(s_send_blob, T89_SEND_MAX, &s_send_var)) {
+                printf("Tiny89 SEND ready %s type %02x size %u\n",
+                       s_send_var.name, (unsigned)s_send_var.type,
+                       s_send_var.size);
+            } else {
+                printf("Tiny89 SEND not a calculator file\n");
+                s_send_var.size = 0;
+            }
+        } else {
+            printf("Tiny89 SEND none\n");
+        }
+    }
+
     /*
      * The calculator's flash, if a previous session left one.  The OS keeps
      * its installation and its apps there, and a freshly converted flash
@@ -959,6 +1014,34 @@ int main(void)
         uint32_t hash;
         int result, count;
 
+        /* Hand the calculator the file it was given: every two seconds until
+         * it takes it, so being slow to reach the Link screen costs nothing,
+         * and no more than half a minute of trying. */
+        if (!s_send_done && s_send_var.size != 0 && ready_printed) {
+            s_send_ticks++;
+        }
+        if (!s_send_done && s_send_var.size != 0 && ready_printed &&
+            s_send_tries < 1u && s_send_ticks % 120u == 0u) {
+            s_send_last_try = presented;
+            s_send_tries++;
+            printf("Tiny89 SEND try %u: %s type %02x size %u\n",
+                   s_send_tries, s_send_var.name, (unsigned)s_send_var.type,
+                   s_send_var.size);
+            /* A flash app is an archived variable, and libticalcs' send_var
+             * maps ATTRB_ARCHIVED to type 0x27 before sending; offering 0x24
+             * is "an app that is not archived", which the calculator refuses
+             * with a link-transmission error. */
+            const uint8_t type =
+                (s_send_var.type == 0x24u || s_send_var.type == 0x1Cu)
+                    ? 0x27u : s_send_var.type;
+            if (t89_proto_send_var(type, s_send_var.name,
+                                   s_send_var.data, s_send_var.size)) {
+                s_send_done = 1;
+                printf("Tiny89 SEND done\n");
+            }
+        }
+
+
         /* (a) One frame of emulated time.  TiEmu refreshes its timers,
          * hardware and keyboard inside hw_m68k_run(), so nothing else is
          * stepped here. */
@@ -967,6 +1050,31 @@ int main(void)
             printf("BAD Tiny89 CPU result=%d\n", result);
             return 1;
         }
+
+#ifdef T89_LINKSEND
+        /* Diagnostic: every ten seconds, offer the calculator a variable.
+         * Nothing happens unless it is sitting in Receive mode, and an
+         * unanswered offer costs one line of output, so the user can walk to
+         * the Link screen at any pace. */
+        if (ready_printed && presented / 600u != s_link_tries) {
+            static const uint8_t body[3] = { 0x00, 0x00, 0x00 };
+            s_link_tries = presented / 600u;
+            printf("Tiny89 PROTO attempt %u\n", (unsigned)s_link_tries);
+            (void)t89_proto_send_var(0x05, "ZZZ", body, sizeof body);
+        }
+#endif
+
+#ifdef T89_LINK_TRACE
+        /* Diagnostic: every byte the calculator puts on the link, and a
+         * periodic line saying whether it has touched the port at all. */
+        for (int b = t89_link_read(); b >= 0; b = t89_link_read()) {
+            printf("Tiny89 LINK rx %02x\n", (unsigned)b);
+        }
+        if (presented != 0 && presented % 300 == 0 && presented != last_link_report) {
+            last_link_report = presented;
+            t89_link_report("now");
+        }
+#endif
 
         /* (b) Take keyboard input. */
         count = poll_keyboard(&last_sequence, events, &command);
