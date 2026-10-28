@@ -7,6 +7,7 @@
 #include <sys/types.h>
 
 #include "tiny89_platform.h"
+#include "t89_rtc.h"
 
 #undef errno
 extern int errno;
@@ -37,13 +38,29 @@ void *_sbrk(ptrdiff_t increment)
     return old;
 }
 
+/* The emulator asks this for the calculator's clock (TiEmu's rtc3_get_time
+ * calls gettimeofday), so the answer has to be a real date: the board's RTC,
+ * carried to the core by TinyTang's time frame and counted forward here from
+ * the cycle counter between frames.  Before a reading has arrived -- a core
+ * just loaded, the desk layer not yet polling -- the platform's own count is
+ * the fallback, which is what this returned before the frame existed.  It is
+ * not a date, and the calculator is told the truth as soon as one arrives;
+ * the alternative, inventing a date, is worse than a clock that is briefly
+ * wrong in a way its own boot has already finished with. */
 int _gettimeofday(struct timeval *tv, void *timezone)
 {
-    uint64_t cycles = t89_cycles64();
+    uint64_t seconds;
+    uint32_t micros;
     (void)timezone;
-    if (tv) {
-        tv->tv_sec = (time_t)(cycles / T89_CORE_HZ);
-        tv->tv_usec = (suseconds_t)((cycles % T89_CORE_HZ) / (T89_CORE_HZ / 1000000u));
+
+    if (tv != NULL) {
+        if (!t89_rtc_now(&seconds, &micros)) {
+            const uint64_t cycles = t89_cycles64();
+            seconds = cycles / T89_CORE_HZ;
+            micros = (uint32_t)((cycles % T89_CORE_HZ) / (T89_CORE_HZ / 1000000u));
+        }
+        tv->tv_sec = (time_t)seconds;
+        tv->tv_usec = (suseconds_t)micros;
     }
     return 0;
 }

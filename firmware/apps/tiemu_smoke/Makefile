@@ -90,11 +90,13 @@ T89_LCD_SOURCES := $(ROOT)/firmware/common/t89_lcd.c \
 T89_LINK_SOURCE := $(ROOT)/firmware/common/t89_link.c
 T89_PROTO_SOURCE := $(ROOT)/firmware/common/t89_proto.c
 T89_FILE_SOURCE := $(ROOT)/firmware/common/t89_file.c
+T89_RTC_SOURCE := $(ROOT)/firmware/common/t89_rtc.c
 APP_SOURCES := main.c $(ROOT)/firmware/boot/load.c \
                $(ROOT)/firmware/boot/support/uart.c \
                $(ROOT)/firmware/common/t89_bios.c \
                $(T89_KEY_SOURCE) $(T89_SAVE_SOURCE) $(T89_LCD_SOURCES) \
-               $(T89_LINK_SOURCE) $(T89_PROTO_SOURCE) $(T89_FILE_SOURCE)
+               $(T89_LINK_SOURCE) $(T89_PROTO_SOURCE) $(T89_FILE_SOURCE) \
+               $(T89_RTC_SOURCE)
 
 core_object = $(BUILD)/obj/core/$(notdir $(1)).o
 rt_object   = $(BUILD)/obj/rt/$(notdir $(1)).o
@@ -136,6 +138,7 @@ $(eval $(call compile_c,$(call app_object,$(T89_SAVE_SOURCE)),$(T89_SAVE_SOURCE)
 $(eval $(call compile_c,$(call app_object,$(T89_LINK_SOURCE)),$(T89_LINK_SOURCE)))
 $(eval $(call compile_c,$(call app_object,$(T89_PROTO_SOURCE)),$(T89_PROTO_SOURCE)))
 $(eval $(call compile_c,$(call app_object,$(T89_FILE_SOURCE)),$(T89_FILE_SOURCE)))
+$(eval $(call compile_c,$(call app_object,$(T89_RTC_SOURCE)),$(T89_RTC_SOURCE)))
 
 # DIAG changes a define and nothing else, so main.c's object would otherwise
 # survive a change to it: the options are kept in a file that is rewritten

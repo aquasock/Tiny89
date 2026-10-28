@@ -27,6 +27,7 @@
 #include "t89_bios.h"
 #include "t89_lcd.h"
 #include "t89_key.h"
+#include "t89_rtc.h"
 #include "t89_file.h"
 #include "t89_link.h"
 #include "t89_proto.h"
@@ -732,6 +733,55 @@ static void diag_survival(const char *when)
 }
 #endif
 
+/*
+ * The board's clock, asked for once while the boot ROM's loader still owns the
+ * link -- the same window the BIOS and the saved state arrive in, and the same
+ * request shape.  TinyTang answers with a six-byte blob (its `Tiny89 SETTINGS
+ * WANT`): UTC seconds since 1970, little-endian, then the desktop's zone in
+ * minutes east of UTC, little-endian and signed.  Zero seconds is the board's
+ * "the RTC has never been set", which seeds nothing.
+ *
+ * The calculator has no clock chip in this fabric, so this is the only date it
+ * ever gets; from here it counts the seconds itself, which is why one blob per
+ * launch is enough and why nothing has to cross the link while it runs.
+ */
+static void request_clock(void)
+{
+    /* In BSS, not on the stack: the boot ROM's loader only writes into the
+     * AE350's SDRAM (0x40000000 and up), and a stack buffer here lives at
+     * 0x6000fea4 -- outside it -- so the loader NAKs the header with an
+     * address reason and nothing arrives.  Every other request this program
+     * makes names a SDRAM buffer for the same reason. */
+    static uint8_t blob[6];
+    uint32_t got = 0;
+    uint32_t utc;
+    int32_t zone_min;
+    int tenth;
+
+    memset(blob, 0, sizeof blob);
+    printf("Tiny89 SETTINGS WANT %08lx %08lx\n",
+           (unsigned long)(uint32_t)(uintptr_t)blob,
+           (unsigned long)(uint32_t)sizeof blob);
+    fflush(stdout);
+    tn_load_reset();
+    for (tenth = 0; tenth < 20 && got == 0; tenth++) {
+        got = tn_load_poll(TN_CORE_HZ / 10);
+    }
+    if (got != (uint32_t)(uintptr_t)blob) {
+        printf("Tiny89 CLOCK none\n");
+        return;
+    }
+
+    utc = (uint32_t)blob[0] | ((uint32_t)blob[1] << 8) |
+          ((uint32_t)blob[2] << 16) | ((uint32_t)blob[3] << 24);
+    zone_min = (int32_t)(int16_t)((uint16_t)blob[4] | ((uint16_t)blob[5] << 8));
+    if (t89_rtc_seed(utc, zone_min, t89_cycles64())) {
+        printf("Tiny89 CLOCK %lu %ld\n", (unsigned long)utc, (long)zone_min);
+    } else {
+        printf("Tiny89 CLOCK not set\n");
+    }
+}
+
 int main(void)
 {
     uint8_t *flash;
@@ -996,6 +1046,14 @@ int main(void)
      * with no input.
      */
     t89_kbd_reset();
+
+    /* The board's clock, asked for while the boot ROM's loader still owns the
+     * link -- it answers over the same path the BIOS and the saved state come
+     * in on, so this has to happen before the link changes hands below.  Its
+     * absence is not a fault: the calculator then keeps the platform's count
+     * and says so. */
+    t89_rtc_reset();
+    request_clock();
 
     /* The keyboard arrives as TinyTang's frames and the fabric's desk link
      * parses them, so the UART has to be in its link mode.  A write to CTRL
