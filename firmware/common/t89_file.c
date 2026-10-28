@@ -12,10 +12,23 @@
  * user's 2021 backup: every length and every sum agrees.
  *
  * Flash application files (.89k) are the **TIFL** container that
- * tifiles_file_read_flash() walks: each entry is a 78-byte header (signature,
- * revision bytes, name at 17, device type at 48, data type at 49, length at
- * 74) followed by the payload and a two-byte sum.  One file may hold more than
- * one entry; this reader takes the first, which is the application.
+ * tifiles_file_read_flash() walks: a 78-byte header (signature, revision
+ * bytes, name at 17, device type at 48, data type at 49, length at 74)
+ * followed by the payload, and the record ends there -- the length at 74
+ * counts the payload and the file ends at 78 + length, with no sum after it.
+ * Unlike a regular variable file, this container proves nothing by itself, so
+ * the checks here are structural: the signature, a non-zero length, and a
+ * record that fits.
+ *
+ * That layout is not a guess: the operating system's own upgrade file is a
+ * **TIFL** too, and t89_bios.c has converted it since entry 8 (1,400,021
+ * bytes = a 78-byte header plus a 1,399,943-byte payload, nothing after).  The
+ * earlier reading here -- a two-byte sum after the payload -- was wrong for
+ * every real Flash App and is why those files could not be parsed at all; the
+ * three in the user's set end exactly at 78 + length (core-log entry 22).
+ *
+ * One file may hold more than one record; this reader takes the first, which
+ * is the application.
  */
 #include <stdint.h>
 #include <string.h>
@@ -67,13 +80,10 @@ int t89_file_parse(const uint8_t *buf, unsigned room, t89_var_t *out)
      * know -- the loader hands over bytes without saying how many. */
 
     /* **TIFL**: a flash file, one 78-byte header before its payload. */
-    if (room >= 80u && memcmp(buf, "**TIFL**", 8) == 0) {
+    if (room >= 78u && memcmp(buf, "**TIFL**", 8) == 0) {
         const uint32_t size = le32(buf + 74);
 
-        if (size == 0 || 78u + size + 2u > room) {
-            return 0;
-        }
-        if (le16(buf + 78u + size) != sum16(buf + 78u, (unsigned)size)) {
+        if (size == 0 || size > room || 78u + size > room) {
             return 0;
         }
         copy_name(out->name, buf + 17, 8);

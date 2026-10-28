@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tiny89 image builder</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Tiny89 image builder</h1>
+  <p class="lede">
+    Boots your TI-89 Titanium operating system in an emulated calculator, installs
+    the files you choose with the calculator's own software, and writes out the
+    flash and RAM images the Tang loads.
+  </p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>1 &middot; Operating system</h2>
+    <p class="hint">The upgrade file TI distributes (<code>.89u</code>). It stays in this tab;
+      nothing is uploaded anywhere.</p>
+    <label class="drop" id="os-drop">
+      <input type="file" id="os-input" accept=".89u,.89U" hidden>
+      <span id="os-name">Choose or drop the .89u file</span>
+    </label>
+  </section>
+
+  <section class="panel">
+    <h2>2 &middot; Your files</h2>
+    <p class="hint">Programs, variables and data to install (<code>.89k .89y .89z .89p</code> and
+      the rest). Flash Apps are recognised and reported, but their exchange is not
+      implemented yet.</p>
+    <label class="drop" id="files-drop">
+      <input type="file" id="files-input" multiple hidden>
+      <span id="files-name">Choose or drop files</span>
+    </label>
+    <ul id="file-list" class="list"></ul>
+  </section>
+
+  <section class="panel">
+    <h2>3 &middot; Build</h2>
+    <div class="row">
+      <button id="build" disabled>Build flash and RAM</button>
+      <span id="phase" class="phase">waiting for an OS image</span>
+    </div>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <div class="screen-row">
+      <canvas id="lcd" width="160" height="100"></canvas>
+      <dl id="status" class="status">
+        <dt>PC</dt><dd id="s-pc">&mdash;</dd>
+        <dt>cycles</dt><dd id="s-cycles">&mdash;</dd>
+        <dt>picture</dt><dd id="s-lcd">&mdash;</dd>
+        <dt>mode</dt><dd id="s-mode">&mdash;</dd>
+      </dl>
+    </div>
+    <div id="results" class="hidden">
+      <div class="row">
+        <a id="dl-state" class="dl primary" download>state</a>
+        <a id="dl-flash" class="dl" download>flash image</a>
+        <a id="dl-ram" class="dl" download>RAM image (not enough on its own)</a>
+      </div>
+      <p class="hint note">
+        Put <code>.state</code> in <code>/root/states/ti89/</code> and <code>.flash</code> in
+        <code>/root/saves/ti89/</code>. The state is the one that keeps your files: the
+        calculator resumes that machine instead of booting. A RAM image alone does not
+        survive a boot, because the operating system rebuilds its RAM and discards what
+        was restored.
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Log</h2>
+    <pre id="log" class="log"></pre>
+  </section>
+</main>
+
+<script src="dist/t89.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

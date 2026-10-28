@@ -9,3 +9,6 @@ __pycache__/
 *.img
 *.rom
 *.raw
+
+# The browser app build (tools/build-wasm-app.sh)
+web/dist/

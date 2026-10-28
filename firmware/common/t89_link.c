@@ -62,18 +62,24 @@ static unsigned long s_bytes_in;     /* here -> calculator */
 
 /* ---- the wires ---- */
 
-void ticables_cable_set_d0(CableHandle *handle, int value)
+/* The port's header declares these returning int (they are libticalcs' own
+ * prototypes, src/port/ticables.h); a driver that returns nothing is a
+ * signature mismatch against every caller, which the board's build tolerated
+ * and wasm-ld reports.  They answer 0 because nothing reads the value. */
+int ticables_cable_set_d0(CableHandle *handle, int value)
 {
     (void)handle;
     s_calc_d0 = value ? 1 : 0;
     s_wire_writes++;
+    return 0;
 }
 
-void ticables_cable_set_d1(CableHandle *handle, int value)
+int ticables_cable_set_d1(CableHandle *handle, int value)
 {
     (void)handle;
     s_calc_d1 = value ? 1 : 0;
     s_wire_writes++;
+    return 0;
 }
 
 int ticables_cable_get_d0(CableHandle *handle)

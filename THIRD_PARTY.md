@@ -14,6 +14,14 @@ Tiny89's TiEmu adapter, probes, converter, and combined emulator program are
 therefore distributed under GPL-2.0-only. Copyright notices in the fetched
 upstream files remain intact.
 
+Tiny89 changes one thing in the fetched tree, and only one: `hw.c` defines
+`void hw_update(void)` where `hw.h` declares `int hw_update(void)`. Every
+caller discards the value, so x86 and RV32 never noticed, but emscripten turns
+the mismatch into a trap and the browser build could not execute a single
+chunk. `tools/patch-tiemu.sh` applies the signature fix, idempotently, and is
+run by `tools/fetch-tiemu.sh` and `tools/build-wasm-app.sh` so a fresh checkout
+builds without a manual step. Nothing else in TiEmu is modified.
+
 Upstream: https://github.com/debrouxl/tiemu
 
 ## TinyNES platform runtime

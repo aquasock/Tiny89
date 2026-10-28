@@ -760,3 +760,51 @@ The second cycle persists what this one made meaningful: `T89_STATE_VERSION` to 
 - User Test: PASS
 
 ---
+## 22 COMMIT Unreleased 2026-10-27T19:56:00-07:00
+
+#### Coming From:
+
+Unreleased 0b06466
+
+#### Purpose:
+
+Build a browser app that boots the calculator in the same emulator the board runs and produces an image the board can load with the user's own files already in it.
+
+#### Outcome:
+
+`web/` is a static page with a build script and a bridge, and it now produces something the board can actually use. `web/t89_web.c` converts the user's `.89u` with the existing `t89_bios.c`, starts the same TiEmu core the AE350 program links, seeds TiEmu's gray-plane model the way the GTK frontend did, and exposes boot, run, install, LCD render, state build/restore and export to JavaScript; `web/app.js`, `index.html` and `style.css` move bytes in and out and draw the calculator's 160x100 picture from the board's own `t89_lcd_render`; `tools/build-wasm-app.sh` compiles it with emscripten to a 482,131-byte `web/dist/t89.wasm`, generated and ignored. Nothing is forked, and `tests/run_t89_wasm_test.sh` proves the point that matters: the browser build reaches PC `0x00821e46` with LCD FNV-1a `0x0c0df297`, the desktop invariant entries 2, 4 and 6 established on the board, in ten checks. Installing works and is done by the calculator's own operating system through the emulated link, pumped by `t89_proto_send_var`: `pacman`, `crogdat`, `metroid`, `bdudebin` and others install, and their names are in the RAM afterwards. The exchange the board's users were promised was not enough, and the two reasons were measured rather than reasoned about. First, capacity: installs stop after sixteen files and 169,729 bytes of payload, with 152,428 bytes of RAM in use, at which point the calculator answers `0x36` -- `CMD_SKP`, its "cannot take this" -- and from then on refuses. The user's set is 675,868 bytes of regular variables against roughly 188 KB of user RAM, and 21 of those files carry archived flags (`0x02`/`0x03`, 231,929 bytes) which belong in the 2.7 MB flash archive; `t89_file.c` reads the attribute at offset 73 and `t89_proto_send_var` never sends it, so everything must go to RAM and RAM is what runs out. Second, and decisive: a flash-and-RAM pair cannot carry anything at all. The user's exported RAM did contain `pacman`, at `0x83a9` with the folder `main`, and the board loaded it byte-perfect; but the operating system rebuilds its RAM at every cold boot, and reproducing the board's boot here left the variable gone with 24,830 bytes rewritten. So the app now exports a **state** instead: `firmware/common/t89_state.h` holds the blob's one definition, used by `main.c` and by the bridge, so a state written in the browser is the state the board restores; `t89_state_build`/`t89_state_restore` in the bridge write and read it, ending as the board's restore ends, with `m68k_setpc` and `MakeFromSR`; `tests/t89_wasm_state_test.js` proves the round trip in fifteen checks by building a state after an install, starting a new machine, restoring it, and finding the variable still present, the PC resumed at the saved address, and the variable still there two million instructions later. On the board the state resumed exactly: `Tiny89 STATE resumed PC=00821e46`, `Tiny89 FLASH GOT 4194304 d1fcdbf9`, and the user reports the cycle passing with `pacman` in VAR-LINK. Three defects were found on the way, two older than this cycle: `hw.c` defines `void hw_update(void)` where `hw.h` declares `int hw_update(void)`, which x86 and RV32 tolerated because nothing reads the value and emscripten turns into a trap on the first chunk, now a documented one-function patch applied idempotently by `tools/patch-tiemu.sh` from `tools/fetch-tiemu.sh` and the wasm build; `t89_link.c`'s two cable setters had the same class of mismatch in the other direction, now fixed; and `t89_file.c`'s `**TIFL**` branch expected a two-byte sum after the payload where a real Flash App ends exactly at 78 plus its length, the same layout the operating system's own upgrade file has and `t89_bios.c` has relied on since entry 8, so it could never parse any `.89k` -- covered now by `tests/test_t89_file.c`, 23 checks that fail on the old arithmetic. A fault of this session's own is recorded too: the bridge treated `t89_file_parse`'s non-zero success as failure, and the first install test reported a readable file as unreadable. Everything shared still builds and passes: the AE350 program to 443,028 bytes of text, and the host suites at key 152, lcd 46, pad 205, save 21, rtc 25, file 23, with the three browser checks at 10, 15 and one install. One sequencing fact was learned on the board and is not yet written into a script: a board that has just rebooted reports `Tiny89 CLOCK not set` to the calculator, because the DS3231 is only reachable through the desktop core's I2C engine and the core is replaced by `tangload`, so `tangi2c rtc` has to be run first. The core-syntax audit re-read `.ai/core.md` and `.ai/core-syntax.md`, inspected the complete `.ai/` diff, confirmed that `.ai/core.md` was unchanged and that no settled entry was rewritten, and validated this entry as number 22 of 100 with exactly six sections, prose in Purpose, Outcome and Next Steps, allowed Status values and only eligible paths in Files Modified.
+
+#### Next Steps:
+
+Three pieces remain, in the order they unblock the most. The archive attribute is the first: 21 of the user's files are marked archived and the sender drops that byte, so with it carried through from `t89_file.c` to the `VAR` header those 0.66 MB could live in the 2.7 MB archive instead of the 188 KB of RAM that runs out after sixteen files. The Flash Apps exchange is the second: seven of the user's files are `**TIFL**` applications needing `send_app` rather than `send_var`, which is the same work entry 20 left open for the board, and libticalcs' `calc_9x.cc` and `calc_89t.cc` (GPL-2.0) are the reference. The third is honesty in the page: it will still hand over an image that installed nothing, which is how the first deployment of this cycle reached the board with an empty RAM; it should refuse, or say so loudly, when no file installed. The deploy sequence needs `tangi2c rtc` before `tangload` written down where a user will find it, alongside the state and flash paths. The page has still only been driven from node and the user's own browser; its JavaScript is syntax-checked and its assets serve, but nothing exercises the UI automatically. Entry 21's items stand unchanged: the host probe still needs the link port's cable hooks before it links, and the FRAMES disagreement, the four-level grayscale path, the 18 lost bytes and entry 20's link-transfer refusal are all open.
+
+#### Files Modified:
+
+- .gitignore
+- THIRD_PARTY.md
+- firmware/apps/tiemu_smoke/main.c
+- firmware/common/t89_file.c
+- firmware/common/t89_link.c
+- firmware/common/t89_state.h
+- tests/run_t89_file_test.sh
+- tests/run_t89_wasm_test.sh
+- tests/t89_wasm_boot_test.js
+- tests/t89_wasm_install_test.js
+- tests/t89_wasm_state_test.js
+- tests/test_t89_file.c
+- tools/build-wasm-app.sh
+- tools/fetch-tiemu.sh
+- tools/patch-tiemu.sh
+- web/README.md
+- web/app.js
+- web/index.html
+- web/style.css
+- web/t89_web.c
+
+#### Status:
+
+- Build: PASS
+- Deployment: PASS
+- User Test: PASS
+
+---

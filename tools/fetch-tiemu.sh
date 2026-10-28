@@ -28,4 +28,9 @@ if [[ "${actual}" != "${TIEMU_COMMIT}" ]]; then
     exit 1
 fi
 
+# This project's one change to the fetched tree, applied here so that every
+# consumer -- the host probe, the board firmware, the browser build -- compiles
+# the same source.  See tools/patch-tiemu.sh for what it is and why.
+TIEMU_ROOT="${destination}" "$(dirname "${BASH_SOURCE[0]}")/patch-tiemu.sh"
+
 echo "TiEmu source ready: ${destination} (${actual})"

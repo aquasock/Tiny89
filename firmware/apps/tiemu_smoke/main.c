@@ -32,6 +32,7 @@
 #include "t89_link.h"
 #include "t89_proto.h"
 #include "t89_save.h"
+#include "t89_state.h"
 #include "tiny89_platform.h"
 #include "ti68k_def.h"
 
@@ -450,43 +451,9 @@ static void save_flash(void)
  *
  * The flash is not duplicated here: the card already carries the 4 MiB image
  * and it is restored by its own channel, so this blob is registers, ports, RAM
- * and the hardware fields.
+ * and the hardware fields.  The layout itself is t89_state.h's, shared with
+ * the browser app so a state written there is read here.
  */
-#define T89_STATE_MAGIC 0x53393854u     /* "T89S" */
-#define T89_STATE_VERSION 2u
-
-typedef struct {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t regs_size;
-    uint32_t io_size;
-    uint32_t io2_size;
-    uint32_t io3_size;
-    uint32_t ram_size;
-    uint32_t extras_size;
-} state_header_t;
-
-/* Ti68kHardware's state fields, the ones ti68k_state_load copies deliberately:
- * the pointers and sizes around them are layout and are rebuilt by hw_init. */
-typedef struct {
-    uint32_t lcd_adr;
-    int32_t contrast;
-    int32_t on_off;
-    int32_t protect;
-    uint32_t archive_limit;
-    int32_t ram_exec[64];
-    uint8_t timer_value;
-    uint8_t timer_init;
-    uint8_t rtc_value;
-    uint8_t pad;
-    /* The live program counter.  regs.pc is not it: UAE keeps pc at the last
-     * m68k_setpc and lets pc_p advance through the instruction, so the true
-     * address is m68k_getpc() and resuming from regs.pc replays instructions
-     * -- with their side effects.  Saved here because the pointer difference
-     * that makes m68k_getpc() work is meaningless once the state leaves
-     * memory. */
-    uint32_t pc;
-} state_extras_t;
 
 /* The bytes of the payload, paced exactly as the RAM save is: the board files
  * the stream 512 bytes at a time and the pause at each boundary is what keeps
