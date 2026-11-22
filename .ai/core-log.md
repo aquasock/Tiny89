@@ -808,3 +808,33 @@ Three pieces remain, in the order they unblock the most. The archive attribute i
 - User Test: PASS
 
 ---
+
+## 23 COMMIT Unreleased 2026-11-22T10:29:23-07:00
+
+#### Coming From:
+
+Unreleased a309a3d
+
+#### Purpose:
+
+Replace the README's dated milestone wording with Tiny89's current state as an integrated system, at the operator's request during a documentation pass across the TinyTang ecosystem.
+
+#### Outcome:
+
+The opening described a current milestone and stopped at the 2026-10-15 board session. It now says Tiny89 runs its TiEmu 3.04 core on the AE350, and a new status paragraph, read from TinyTang's `ports/bl616/tiny89_app.cpp`, says TinyTang's Tiny89 window lists the OS images under `/root/media/ti89` as `.89u`, `.89t`, `.raw` or `.rom`, starts a session from one and puts the desktop core back after Ctrl+Alt+Q, that the calculator's RAM and flash are kept in `/root/saves/ti89` and its state in `/root/states/ti89`, and that Tiny89 ships on TinyTang's release card from v0.2.0 with no TI operating system, which the user supplies. The 2026-10-15 history below it is unchanged. The working tree carries seven modified files that are not this cycle's, under `firmware/`, `web/` and `.codewhale/`, and they are left out of the commit. Nothing was built or deployed. The core-syntax audit was run: `.ai/core.md` and `.ai/core-syntax.md` were re-read, `.ai/core.md` was confirmed unchanged, the complete `.ai/` diff was inspected and holds only this entry, and this entry was validated as number 23 of 100 with six canonical sections in order, a one-sentence Purpose, prose in Outcome and Next Steps, only eligible paths in Files Modified and allowed Status values.
+
+#### Next Steps:
+
+Entry 22's next steps stand.
+
+#### Files Modified:
+
+- README.md
+
+#### Status:
+
+- Build: N/A
+- Deployment: N/A
+- User Test: N/A
+
+---

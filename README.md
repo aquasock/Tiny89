@@ -1,9 +1,17 @@
 # Tiny89
 
-Tiny89 is a TI-89 Titanium emulator for the Tang Console 138K. The current
-milestone runs a headless, dependency-stripped TiEmu 3.04 core on the hardened
-AE350 RISC-V CPU, on Tiny89's own AE350 platform image, and shows the
-calculator's LCD at a whole scale of 7, filling most of the 720p frame.
+Tiny89 is a TI-89 Titanium emulator for the Tang Console 138K. It runs a
+headless, dependency-stripped TiEmu 3.04 core on the hardened AE350 RISC-V CPU,
+on Tiny89's own AE350 platform image, and shows the calculator's LCD at a whole
+scale of 7, filling most of the 720p frame.
+
+**Status: integrated.** TinyTang's Tiny89 window lists the OS images under
+`/root/media/ti89` (`.89u`, `.89t`, `.raw` or `.rom`) and starts a session from
+one; Ctrl+Alt+Q in the session ends it and puts the desktop core back. The
+calculator's RAM and flash are kept in `/root/saves/ti89` and its state in
+`/root/states/ti89`. Tiny89 ships on TinyTang's release card from v0.2.0, and
+that card carries no TI operating system: the image is Texas Instruments'
+software, so you supply your own.
 
 On 2026-10-15 the supplied TI-89 Titanium OS 3.10 upgrade booted on the Tang,
 reached the AMS Apps desktop, produced the same stable LCD hash as the host
